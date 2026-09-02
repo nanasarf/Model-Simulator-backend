@@ -4,6 +4,7 @@ using SimulationPlatform.Domain.Common;
 using SimulationPlatform.Domain.Definitions;
 using SimulationPlatform.Domain.Runtime;
 using SimulationPlatform.Infrastructure.InMemory;
+using SimulationPlatform.Infrastructure;
 using SimulationPlatform.Simulations.Core.Contracts;
 using SimulationPlatform.Simulations.Economics.SupplyDemand;
 
@@ -33,7 +34,7 @@ public sealed class RuntimeFoundationTests
         var model = new SupplyDemandModel();
         var state = await model.InitializeAsync(new(JsonSerializer.SerializeToElement(new { }), 42), default);
         store.Snapshots.Add(new(session.Id, team, 0, model.Descriptor.Identifier, model.Descriptor.Version, state, DateTimeOffset.UnixEpoch));
-        var handler = new SubmitActionHandler(store, store, new SimulationModelRegistry([model]), new FixedClock());
+        var handler = new SubmitActionHandler(store, store, new SimulationModelRegistry([model]), new FixedClock(), store, new AllowAllActionRules());
         var command = new SubmitActionCommand(session.Id, team, user, assignmentId, "CHANGE_OUTPUT", JsonSerializer.SerializeToElement(new { direction = "increase" }), "retry-key");
 
         var first = await handler.HandleAsync(command, default);

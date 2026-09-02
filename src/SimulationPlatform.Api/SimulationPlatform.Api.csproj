@@ -6,6 +6,16 @@
     <ProjectReference Include="..\SimulationPlatform.Infrastructure\SimulationPlatform.Infrastructure.csproj" />
     <ProjectReference Include="..\SimulationPlatform.Simulations.Core\SimulationPlatform.Simulations.Core.csproj" />
     <ProjectReference Include="..\SimulationPlatform.Simulations.Economics\SimulationPlatform.Simulations.Economics.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Identity\SimulationPlatform.Identity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
   </ItemGroup>
 
   <PropertyGroup>

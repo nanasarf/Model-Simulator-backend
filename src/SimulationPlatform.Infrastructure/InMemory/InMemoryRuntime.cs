@@ -6,16 +6,7 @@ using SimulationPlatform.Simulations.Core.Contracts;
 
 namespace SimulationPlatform.Infrastructure.InMemory;
 
-public sealed class SystemClock : IClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }
-
-public sealed class SimulationModelRegistry(IEnumerable<ISimulationModel> models) : ISimulationModelRegistry
-{
-    private readonly Dictionary<(string, string), ISimulationModel> _models = models.ToDictionary(x => (x.Descriptor.Identifier, x.Descriptor.Version));
-    public ISimulationModel Resolve(string identifier, string version) => _models.TryGetValue((identifier, version), out var model)
-        ? model : throw new DomainException("model.not_found", $"Simulation model {identifier}:{version} is not registered.");
-}
-
-public sealed class InMemoryRuntimeStore : IRuntimeStore, IScenarioCatalog
+public sealed class InMemoryRuntimeStore : IRuntimeStore, IScenarioCatalog, ITransactionRunner
 {
     public Dictionary<Guid, SimulationSession> Sessions { get; } = [];
     public Dictionary<Guid, ScenarioVersion> Scenarios { get; } = [];
@@ -33,4 +24,10 @@ public sealed class InMemoryRuntimeStore : IRuntimeStore, IScenarioCatalog
         ValueTask.FromResult(Snapshots.Where(x => x.SessionId == sessionId && x.TeamId == teamId).MaxBy(x => x.RoundNumber));
     public ValueTask AddSubmissionAsync(ActionSubmission submission, CancellationToken ct) { Submissions.Add(submission); return ValueTask.CompletedTask; }
     public ValueTask SaveSessionAsync(SimulationSession session, CancellationToken ct) { Sessions[session.Id] = session; return ValueTask.CompletedTask; }
+    public ValueTask<T> ExecuteAsync<T>(Func<CancellationToken, ValueTask<T>> operation, CancellationToken ct) => operation(ct);
+}
+
+public sealed class AllowAllActionRules : IActionRuleEvaluator
+{
+    public ValueTask<bool> IsAllowedAsync(ActionRuleContext context, CancellationToken ct) => ValueTask.FromResult(true);
 }

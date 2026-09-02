@@ -30,6 +30,19 @@ public sealed class SimulationSession
         Append("SessionCreated", null, createdAt, new { scenario.Id, scenario.Version, seed });
     }
 
+    private SimulationSession(Guid id, Guid scenarioVersionId, string modelIdentifier, string modelVersion,
+        int seed, string phase, int roundNumber, long version, IEnumerable<SimulationEvent> events)
+    {
+        Id = id; ScenarioVersionId = scenarioVersionId; ModelIdentifier = modelIdentifier;
+        ModelVersion = modelVersion; Seed = seed; Phase = phase; RoundNumber = roundNumber; Version = version;
+        _events.AddRange(events);
+    }
+
+    public static SimulationSession Restore(Guid id, Guid scenarioVersionId, string modelIdentifier,
+        string modelVersion, int seed, string phase, int roundNumber, long version,
+        IEnumerable<SimulationEvent>? events = null) =>
+        new(id, scenarioVersionId, modelIdentifier, modelVersion, seed, phase, roundNumber, version, events ?? []);
+
     public void TransitionTo(string target, ScenarioVersion scenario, Guid actorId, DateTimeOffset at)
     {
         if (!scenario.AllowedTransitions.TryGetValue(Phase, out var allowed) || !allowed.Contains(target))

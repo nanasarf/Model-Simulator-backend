@@ -13,9 +13,13 @@ public sealed record SubmitActionCommand(
     string ActionCode, JsonElement Payload, string IdempotencyKey);
 
 public sealed class SubmitActionHandler(
-    IRuntimeStore store, IScenarioCatalog scenarios, ISimulationModelRegistry models, IClock clock)
+    IRuntimeStore store, IScenarioCatalog scenarios, ISimulationModelRegistry models, IClock clock,
+    ITransactionRunner transactions, IActionRuleEvaluator rules)
 {
-    public async ValueTask<ActionSubmission> HandleAsync(SubmitActionCommand command, CancellationToken cancellationToken)
+    public ValueTask<ActionSubmission> HandleAsync(SubmitActionCommand command, CancellationToken cancellationToken) =>
+        transactions.ExecuteAsync(ct => HandleCoreAsync(command, ct), cancellationToken);
+
+    private async ValueTask<ActionSubmission> HandleCoreAsync(SubmitActionCommand command, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
             throw new DomainException("idempotency.required", "An idempotency key is required.");
@@ -38,6 +42,9 @@ public sealed class SubmitActionHandler(
         if (!scenario.Actions.TryGetValue(command.ActionCode, out var action)) throw new DomainException("action.unknown", "Unknown action.");
         if (!assignment.CapabilityCodes.Contains(action.RequiredCapability)) throw new DomainException("capability.denied", "The role lacks the required capability.");
         if (!action.AvailablePhases.Contains(session.Phase)) throw new DomainException("action.phase_denied", "The action is unavailable in the current phase.");
+        if (!await rules.IsAllowedAsync(new(session.ScenarioVersionId, session.Phase, command.TeamId,
+            command.ActionCode, assignment.CapabilityCodes), cancellationToken))
+            throw new DomainException("rule.denied", "The configured rules deny this action.");
 
         var snapshot = await store.FindLatestSnapshotAsync(command.SessionId, command.TeamId, cancellationToken)
             ?? throw new DomainException("state.not_initialized", "The team state has not been initialized.");
