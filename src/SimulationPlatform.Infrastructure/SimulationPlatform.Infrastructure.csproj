@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SimulationPlatform.Application\SimulationPlatform.Application.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Domain\SimulationPlatform.Domain.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Simulations.Core\SimulationPlatform.Simulations.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
