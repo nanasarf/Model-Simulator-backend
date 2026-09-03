@@ -25,6 +25,7 @@ using SimulationPlatform.Identity;
 using SimulationPlatform.Identity.Authorization;
 using SimulationPlatform.Simulations.Core.Contracts;
 using SimulationPlatform.Simulations.Economics.SupplyDemand;
+using SimulationPlatform.Simulations.Economics.Macroeconomics;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -104,6 +105,8 @@ builder.Services.AddSingleton<IIntegrationEventPublisher, SignalRIntegrationEven
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddSingleton<SupplyDemandModel>();
 builder.Services.AddSingleton<ISimulationModel>(sp => sp.GetRequiredService<SupplyDemandModel>());
+builder.Services.AddSingleton<ShortRunMacroModel>();
+builder.Services.AddSingleton<ISimulationModel>(sp => sp.GetRequiredService<ShortRunMacroModel>());
 builder.Services.AddSingleton<ISimulationModelRegistry, SimulationModelRegistry>();
 builder.Services.AddScoped<EfRuntimeStore>();
 builder.Services.AddScoped<IRuntimeStore>(sp => sp.GetRequiredService<EfRuntimeStore>());
