@@ -3,11 +3,13 @@ using Microsoft.EntityFrameworkCore;
 using SimulationPlatform.Application.Abstractions;
 using SimulationPlatform.Domain.Definitions;
 using SimulationPlatform.Domain.Runtime;
+using SimulationPlatform.Application.Classrooms;
 
 namespace SimulationPlatform.Infrastructure.Persistence;
 
 public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScenarioCatalog, IRoundExecutionStore
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async ValueTask<SimulationSession?> FindSessionAsync(Guid id, CancellationToken ct)
     {
         var row = await db.Sessions.SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -18,7 +20,14 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
     public async ValueTask<ScenarioVersion?> FindAsync(Guid id, CancellationToken ct)
     {
         var row = await db.ScenarioVersions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
-        return row is null ? null : JsonSerializer.Deserialize<ScenarioVersion>(row.ConfigurationJson);
+        if (row is null) return null;
+        var manifest = JsonSerializer.Deserialize<ScenarioManifest>(row.ManifestJson, JsonOptions)
+            ?? throw new JsonException("Published scenario manifest is invalid.");
+        var transitions = manifest.AllowedTransitions.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value);
+        var actions = manifest.Actions.ToDictionary(x => x.Code,
+            x => new ActionDefinition(Guid.Empty, x.Code, x.RequiredCapability, x.AvailablePhases));
+        return new ScenarioVersion(row.Id, row.Name, row.Version, row.ModelIdentifier, row.ModelVersion,
+            manifest.Phases, transitions, actions);
     }
 
     public async ValueTask<RoleAssignment?> FindAssignmentAsync(Guid sessionId, Guid userId, Guid assignmentId, CancellationToken ct)
@@ -58,9 +67,8 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
         var row = await db.Sessions.SingleAsync(x => x.Id == session.Id, ct);
         row.Phase = session.Phase; row.RoundNumber = session.RoundNumber; row.Version = session.Version;
         var existingIds = await db.Events.Where(x => x.SessionId == session.Id).Select(x => x.Id).ToHashSetAsync(ct);
-        var sequence = await db.Events.Where(x => x.SessionId == session.Id).Select(x => (long?)x.Sequence).MaxAsync(ct) ?? 0;
         foreach (var item in session.Events.Where(x => !existingIds.Contains(x.Id)))
-            db.Events.Add(new EventRow { Id = item.Id, SessionId = item.SessionId, Sequence = ++sequence, RoundNumber = item.RoundNumber,
+            db.Events.Add(new EventRow { Id = item.Id, SessionId = item.SessionId, RoundNumber = item.RoundNumber,
                 ActorId = item.ActorId, Type = item.Type, DataJson = item.Data.GetRawText(), OccurredAt = item.OccurredAt });
     }
 
@@ -90,7 +98,8 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
 
     public async ValueTask CompleteExecutionAsync(Guid executionId, DateTimeOffset at, CancellationToken ct)
     {
-        var row = await db.Executions.SingleAsync(x => x.Id == executionId && x.Status == "Running", ct);
+        var row = db.Executions.Local.SingleOrDefault(x => x.Id == executionId && x.Status == "Running")
+            ?? await db.Executions.SingleAsync(x => x.Id == executionId && x.Status == "Running", ct);
         row.Status = "Completed"; row.CompletedAt = at;
     }
 }

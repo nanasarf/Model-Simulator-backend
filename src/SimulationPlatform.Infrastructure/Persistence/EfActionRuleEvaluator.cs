@@ -8,13 +8,20 @@ namespace SimulationPlatform.Infrastructure.Persistence;
 
 public sealed class EfActionRuleEvaluator(PlatformDbContext db, RuleEngine engine) : IActionRuleEvaluator
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async ValueTask<bool> IsAllowedAsync(ActionRuleContext context, CancellationToken ct)
     {
-        var rows = await db.Rules.AsNoTracking().Where(x => x.ScenarioVersionId == context.ScenarioVersionId && x.Enabled).ToListAsync(ct);
-        if (rows.Count == 0) return true;
-        var definitions = rows.Select(x => new RuleDefinition(x.Id, x.Priority,
+        var manifestJson = await db.SessionManifests.AsNoTracking()
+            .Where(x => x.SessionId == context.SessionId)
+            .Select(x => x.ManifestJson)
+            .SingleOrDefaultAsync(ct)
+            ?? throw new DomainException("session.manifest_missing", "The frozen session manifest was not found.");
+        var manifest = JsonSerializer.Deserialize<SimulationPlatform.Application.Classrooms.ScenarioManifest>(manifestJson, JsonOptions)
+            ?? throw new DomainException("session.manifest_invalid", "The frozen session manifest is invalid.");
+        if (manifest.Rules.Count == 0) return true;
+        var definitions = manifest.Rules.Select(x => new RuleDefinition(x.Id, x.Priority,
             x.Effect == "Deny" ? RuleEffect.Deny : x.Effect == "Allow" ? RuleEffect.Allow
-                : throw new DomainException("rule.effect_unknown", "Unknown rule effect."), RuleAstParser.Parse(x.ConditionJson)));
+                : throw new DomainException("rule.effect_unknown", "Unknown rule effect."), RuleAstParser.Parse(x.Condition.GetRawText())));
         var facts = new DictionaryRuleFacts(new Dictionary<string, object?> {
             ["runtime.phase"] = context.Phase, ["actor.capabilities"] = context.Capabilities,
             ["team.id"] = context.TeamId.ToString(), ["action.code"] = context.ActionCode });

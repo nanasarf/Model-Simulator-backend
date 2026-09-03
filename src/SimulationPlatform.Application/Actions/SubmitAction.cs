@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using SimulationPlatform.Application.Abstractions;
 using SimulationPlatform.Domain.Common;
@@ -42,7 +40,7 @@ public sealed class SubmitActionHandler(
         if (!scenario.Actions.TryGetValue(command.ActionCode, out var action)) throw new DomainException("action.unknown", "Unknown action.");
         if (!assignment.CapabilityCodes.Contains(action.RequiredCapability)) throw new DomainException("capability.denied", "The role lacks the required capability.");
         if (!action.AvailablePhases.Contains(session.Phase)) throw new DomainException("action.phase_denied", "The action is unavailable in the current phase.");
-        if (!await rules.IsAllowedAsync(new(session.ScenarioVersionId, session.Phase, command.TeamId,
+        if (!await rules.IsAllowedAsync(new(session.Id, session.Phase, command.TeamId,
             command.ActionCode, assignment.CapabilityCodes), cancellationToken))
             throw new DomainException("rule.denied", "The configured rules deny this action.");
 
@@ -62,7 +60,5 @@ public sealed class SubmitActionHandler(
 
     private static bool SameRequest(ActionSubmission prior, SubmitActionCommand command) =>
         prior.SessionId == command.SessionId && prior.TeamId == command.TeamId && prior.RoleAssignmentId == command.RoleAssignmentId &&
-        prior.ActionCode == command.ActionCode && CryptographicOperations.FixedTimeEquals(
-            SHA256.HashData(Encoding.UTF8.GetBytes(prior.Payload.GetRawText())),
-            SHA256.HashData(Encoding.UTF8.GetBytes(command.Payload.GetRawText())));
+        prior.ActionCode == command.ActionCode && JsonElement.DeepEquals(prior.Payload, command.Payload);
 }

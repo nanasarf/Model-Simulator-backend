@@ -13,6 +13,8 @@ using SimulationPlatform.Application.Abstractions;
 using SimulationPlatform.Application.Actions;
 using SimulationPlatform.Application.Runtime;
 using SimulationPlatform.Application.Rules;
+using SimulationPlatform.Application.Classrooms;
+using SimulationPlatform.Api;
 using SimulationPlatform.Domain.Common;
 using SimulationPlatform.Domain.Definitions;
 using SimulationPlatform.Domain.Runtime;
@@ -69,6 +71,13 @@ builder.Services.AddAuthentication().AddJwtBearer(options =>
         ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = ClaimTypes.NameIdentifier, RoleClaimType = ClaimTypes.Role };
     options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
     {
+        OnMessageReceived = context =>
+        {
+            var token = context.Request.Query["access_token"];
+            if (!string.IsNullOrWhiteSpace(token) && context.HttpContext.Request.Path.StartsWithSegments("/hubs/sessions"))
+                context.Token = token;
+            return Task.CompletedTask;
+        },
         OnTokenValidated = async context =>
         {
             var subject = context.Principal?.FindFirstValue("sub");
@@ -107,6 +116,7 @@ builder.Services.AddScoped<IAuditWriter, EfAuditWriter>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<SubmitActionHandler>();
 builder.Services.AddScoped<ExecuteRoundHandler>();
+builder.Services.AddScoped<IClassroomWorkflow, EfClassroomWorkflow>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())
@@ -126,10 +136,15 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     var error = context.Features.Get<IExceptionHandlerFeature>()?.Error;
     var (status, code, detail) = error switch
     {
-        DomainException domain when domain.Code is "session.not_found" or "scenario.not_found" =>
+        DomainException domain when domain.Code.EndsWith(".not_found", StringComparison.Ordinal) =>
             (StatusCodes.Status404NotFound, domain.Code, domain.Message),
-        DomainException domain when domain.Code == "idempotency.conflict" =>
+        DomainException domain when domain.Code is "idempotency.conflict" or "round.already_executed" or
+            "session.status_conflict" or "session.frozen" or "role.capacity_reached" =>
             (StatusCodes.Status409Conflict, domain.Code, domain.Message),
+        DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "concurrency.conflict", "The resource changed; reload and retry."),
+        DbUpdateException dbUpdate when dbUpdate.InnerException is Npgsql.PostgresException { SqlState: "23505" } =>
+            (StatusCodes.Status409Conflict, "persistence.duplicate", "The operation conflicts with an existing resource."),
+        UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "authentication.required", "Authentication is required."),
         SecurityTokenException => (StatusCodes.Status401Unauthorized, "authentication.invalid_token", "The supplied token is invalid."),
         DomainException domain => (StatusCodes.Status422UnprocessableEntity, domain.Code, domain.Message),
         _ => (StatusCodes.Status500InternalServerError, "server.error", "An unexpected error occurred.")
@@ -199,6 +214,7 @@ app.MapPost("/api/v1/sessions/{sessionId:guid}/rounds/current/execute", async (G
     return Results.Ok(await handler.HandleAsync(new(sessionId, request.TeamId, actorId, request.ExecutionId, http.TraceIdentifier), ct));
 }).RequireAuthorization(PlatformPolicies.Instructor);
 app.MapHub<SessionHub>("/hubs/sessions");
+app.MapClassroomWorkflow();
 app.Run();
 
 public sealed record SubmitActionRequest(Guid TeamId, Guid RoleAssignmentId, string ActionCode, JsonElement Payload);
@@ -208,14 +224,34 @@ public sealed record RefreshRequest(string RefreshToken);
 public sealed record ExecuteRoundRequest(Guid TeamId, Guid ExecutionId);
 public sealed record OwnedSessionResource(Guid OwnerUserId) : IOwnedResource;
 [Authorize]
-public sealed class SessionHub : Microsoft.AspNetCore.SignalR.Hub;
+public sealed class SessionHub(PlatformDbContext db) : Microsoft.AspNetCore.SignalR.Hub
+{
+    public async Task JoinSession(Guid sessionId)
+    {
+        var subject = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Context.User?.FindFirstValue("sub");
+        if (!Guid.TryParse(subject, out var userId)) throw new HubException("authentication.required");
+        var participant = await db.Participants.AsNoTracking().SingleOrDefaultAsync(x => x.SessionId == sessionId && x.UserId == userId);
+        var owns = participant is null && await db.Sessions.Where(x => x.Id == sessionId)
+            .Join(db.Classrooms, x => x.ClassroomId, x => x.Id, (_, room) => room)
+            .Join(db.Courses, x => x.CourseId, x => x.Id, (_, course) => course.OwnerUserId)
+            .AnyAsync(x => x == userId);
+        if (participant is null && !owns) throw new HubException("session.not_found");
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"session:{sessionId}");
+        if (participant?.TeamId is Guid teamId)
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"session:{sessionId}:team:{teamId}");
+    }
+
+    public Task LeaveSession(Guid sessionId) => Groups.RemoveFromGroupAsync(Context.ConnectionId, $"session:{sessionId}");
+}
 public sealed class SignalRIntegrationEventPublisher(Microsoft.AspNetCore.SignalR.IHubContext<SessionHub> hub)
     : IIntegrationEventPublisher
 {
     public async ValueTask PublishAsync(Guid messageId, string type, string payloadJson, CancellationToken ct)
     {
         using var document = JsonDocument.Parse(payloadJson);
-        var sessionId = document.RootElement.TryGetProperty("SessionId", out var id) ? id.GetGuid() : Guid.Empty;
+        var root = document.RootElement;
+        var hasId = root.TryGetProperty("sessionId", out var id) || root.TryGetProperty("SessionId", out id);
+        var sessionId = hasId && id.ValueKind == JsonValueKind.String && id.TryGetGuid(out var parsed) ? parsed : Guid.Empty;
         if (sessionId == Guid.Empty) return;
         await hub.Clients.Group($"session:{sessionId}").SendAsync(type, new { messageId, payload = document.RootElement.Clone() }, ct);
     }

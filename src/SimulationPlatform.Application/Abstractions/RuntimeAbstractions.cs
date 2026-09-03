@@ -30,7 +30,7 @@ public interface IRoundExecutionStore
     ValueTask CompleteExecutionAsync(Guid executionId, DateTimeOffset at, CancellationToken cancellationToken);
 }
 
-public sealed record ActionRuleContext(Guid ScenarioVersionId, string Phase, Guid TeamId,
+public sealed record ActionRuleContext(Guid SessionId, string Phase, Guid TeamId,
     string ActionCode, IReadOnlySet<string> Capabilities);
 
 public interface IActionRuleEvaluator
