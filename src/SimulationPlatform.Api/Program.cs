@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -24,10 +25,30 @@ using SimulationPlatform.Simulations.Core.Contracts;
 using SimulationPlatform.Simulations.Economics.SupplyDemand;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole();
+builder.Logging.AddDebug();
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
     context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier);
 builder.Services.AddHealthChecks();
 builder.Services.AddSignalR();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Simulation Platform API",
+        Version = "v1",
+        Description = "Backend API for the multiplayer educational simulation platform."
+    });
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Enter the JWT access token returned by /api/v1/auth/login."
+    });
+});
 var connectionString = builder.Configuration.GetConnectionString("Platform")
     ?? throw new InvalidOperationException("ConnectionStrings:Platform is required.");
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>()
@@ -88,6 +109,16 @@ builder.Services.AddScoped<SubmitActionHandler>();
 builder.Services.AddScoped<ExecuteRoundHandler>();
 
 var app = builder.Build();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Simulation Platform API v1");
+        options.RoutePrefix = "swagger";
+        options.DisplayRequestDuration();
+    });
+}
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
