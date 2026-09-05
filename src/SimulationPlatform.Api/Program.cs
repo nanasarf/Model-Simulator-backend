@@ -107,6 +107,8 @@ builder.Services.AddSingleton<SupplyDemandModel>();
 builder.Services.AddSingleton<ISimulationModel>(sp => sp.GetRequiredService<SupplyDemandModel>());
 builder.Services.AddSingleton<ShortRunMacroModel>();
 builder.Services.AddSingleton<ISimulationModel>(sp => sp.GetRequiredService<ShortRunMacroModel>());
+builder.Services.AddSingleton<SimulationPlatform.Simulations.Economics.CompetitiveMarket.CompetitiveMarketModel>();
+builder.Services.AddSingleton<ISimulationModel>(sp => sp.GetRequiredService<SimulationPlatform.Simulations.Economics.CompetitiveMarket.CompetitiveMarketModel>());
 builder.Services.AddSingleton<ISimulationModelRegistry, SimulationModelRegistry>();
 builder.Services.AddScoped<EfRuntimeStore>();
 builder.Services.AddScoped<IRuntimeStore>(sp => sp.GetRequiredService<EfRuntimeStore>());
@@ -125,6 +127,8 @@ builder.Services.AddScoped<IMacroClassroomGameplay, MacroClassroomGameplay>();
 builder.Services.AddScoped<IMacroScenarioAuthoring, MacroScenarioAuthoring>();
 builder.Services.AddScoped<SimulationPlatform.Application.Assessment.IAssessmentCommentStore, EfAssessmentCommentStore>();
 builder.Services.AddScoped<IMacroLearningAnalytics, MacroLearningAnalytics>();
+builder.Services.AddScoped<SimulationPlatform.Simulations.Economics.CompetitiveMarket.ICompetitiveMarketAuthoring, SimulationPlatform.Simulations.Economics.CompetitiveMarket.CompetitiveMarketAuthoring>();
+builder.Services.AddScoped<SimulationPlatform.Simulations.Economics.CompetitiveMarket.ICompetitiveMarketGameplay, SimulationPlatform.Simulations.Economics.CompetitiveMarket.CompetitiveMarketGameplay>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())
@@ -224,6 +228,7 @@ app.MapPost("/api/v1/sessions/{sessionId:guid}/rounds/current/execute", async (G
 app.MapHub<SessionHub>("/hubs/sessions");
 app.MapClassroomWorkflow();
 app.MapMacroGameplay();
+app.MapCompetitiveMarket();
 app.Run();
 
 public sealed record SubmitActionRequest(Guid TeamId, Guid RoleAssignmentId, string ActionCode, JsonElement Payload);
