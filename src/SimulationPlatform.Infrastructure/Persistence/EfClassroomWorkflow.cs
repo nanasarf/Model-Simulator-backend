@@ -83,6 +83,38 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
         Audit(actor, "Scenario.Published", "ScenarioVersion", row.Id); await db.SaveChangesAsync(ct); return row.Id;
     }, ct);
 
+    public ValueTask<Guid> PublishScenarioDraftAsync(Guid actor, Guid draftId, string name, ScenarioManifest manifest, long expectedDraftVersion, CancellationToken ct) => Tx(async () =>
+    {
+        var draft = await db.ScenarioDrafts.SingleOrDefaultAsync(x => x.Id == draftId && x.OwnerUserId == actor, ct)
+            ?? throw Error("scenario_draft.not_found", "Scenario draft was not found.");
+        if (draft.Status != "Draft") throw Error("scenario_draft.immutable", "Only a draft can be published.");
+        if (draft.Version != expectedDraftVersion) throw Error("concurrency.conflict", "The draft changed before publication.");
+        ValidateManifest(manifest); models.Resolve(manifest.ModelIdentifier, manifest.ModelVersion);
+        var version = (await db.ScenarioVersions.Where(x => x.SimulationDefinitionId == draft.SimulationDefinitionId)
+            .MaxAsync(x => (int?)x.Version, ct) ?? 0) + 1;
+        var manifestJson = JsonSerializer.Serialize(manifest, JsonOptions);
+        var actionMap = manifest.Actions.ToDictionary(x => x.Code, x => new ActionDefinition(Guid.NewGuid(), x.Code,
+            x.RequiredCapability, x.AvailablePhases), StringComparer.Ordinal);
+        var transitions = manifest.AllowedTransitions.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value, StringComparer.Ordinal);
+        var domain = new ScenarioVersion(Guid.NewGuid(), name.Trim(), version, manifest.ModelIdentifier,
+            manifest.ModelVersion, manifest.Phases, transitions, actionMap);
+        db.ScenarioVersions.Add(new ScenarioVersionRow { Id = domain.Id, SimulationDefinitionId = draft.SimulationDefinitionId,
+            Version = version, Name = name.Trim(), ModelIdentifier = manifest.ModelIdentifier, ModelVersion = manifest.ModelVersion,
+            ConfigurationJson = JsonSerializer.Serialize(domain, JsonOptions), ManifestJson = manifestJson,
+            ManifestHash = SHA256.HashData(Encoding.UTF8.GetBytes(manifestJson)), PublishedAt = clock.UtcNow });
+        foreach (var rule in manifest.Rules)
+        {
+            _ = RuleAstParser.Parse(rule.Condition.GetRawText());
+            db.Rules.Add(new RuleDefinitionRow { Id = rule.Id, ScenarioVersionId = domain.Id, Priority = rule.Priority,
+                Effect = rule.Effect, ConditionJson = rule.Condition.GetRawText(), Enabled = true });
+        }
+        draft.Status = "Published"; draft.PublishedScenarioVersionId = domain.Id; draft.Version++; draft.UpdatedAt = clock.UtcNow;
+        Message("ScenarioPublished", domain.Id, new { scenarioVersionId = domain.Id, version, draftId });
+        Message("ScenarioDraftPublished", draftId, new { scenarioVersionId = domain.Id, version });
+        Audit(actor, "ScenarioDraft.Published", "ScenarioDraft", draftId);
+        await db.SaveChangesAsync(ct); return domain.Id;
+    }, ct);
+
     public ValueTask<Guid> CreateSessionAsync(Guid actor, Guid classroomId, Guid scenarioId, int seed, CancellationToken ct) => Tx(async () =>
     {
         await OwnedClassroom(actor, classroomId, ct);
@@ -150,6 +182,29 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
         Message("ParticipantReadyChanged", sessionId, new { sessionId, userId = studentId, ready }); await db.SaveChangesAsync(ct); return true;
     }, ct).AsVoid();
 
+    public ValueTask SetRoundReadyAsync(Guid studentId, Guid sessionId, bool ready, CancellationToken ct) => Tx(async () =>
+    {
+        var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == sessionId, ct)
+            ?? throw Error("session.not_found", "Session was not found.");
+        if (session.Status != "Running") throw Error("session.not_running", "Session must be running.");
+        var manifest = await Manifest(sessionId, ct);
+        if (!(manifest.ReadinessRequiredPhases ?? []).Contains(session.Phase))
+            throw Error("readiness.phase_not_required", "The current phase does not accept readiness.");
+        if (!await db.Participants.AnyAsync(x => x.SessionId == sessionId && x.UserId == studentId, ct))
+            throw Error("participant.not_found", "You are not a session participant.");
+        if (ready && !await db.ActionSubmissions.AnyAsync(x => x.SessionId == sessionId && x.RoundNumber == session.RoundNumber &&
+            x.UserId == studentId && x.SubmittedPhase == session.Phase, ct))
+            throw Error("readiness.submission_required", "Submit the required work for this phase before becoming ready.");
+        var row = await db.RoundReadiness.SingleOrDefaultAsync(x => x.SessionId == sessionId && x.RoundNumber == session.RoundNumber &&
+            x.Phase == session.Phase && x.UserId == studentId, ct);
+        if (row is null) db.RoundReadiness.Add(new RoundReadinessRow { Id = Guid.NewGuid(), SessionId = sessionId,
+            RoundNumber = session.RoundNumber, Phase = session.Phase, UserId = studentId, IsReady = ready, ChangedAt = clock.UtcNow });
+        else { row.IsReady = ready; row.ChangedAt = clock.UtcNow; }
+        Event(sessionId, session.RoundNumber, studentId, "RoundReadinessChanged", new { userId = studentId, session.Phase, ready });
+        Message("ParticipantReadyChanged", sessionId, new { sessionId, roundNumber = session.RoundNumber, phase = session.Phase, userId = studentId, ready });
+        await db.SaveChangesAsync(ct); return true;
+    }, ct).AsVoid();
+
     public ValueTask StartSessionAsync(Guid actor, Guid sessionId, CancellationToken ct) => Tx(async () =>
     {
         var session = await OwnedSession(actor, sessionId, ct); EnsureDraft(session); var manifest = await Manifest(sessionId, ct);
@@ -184,7 +239,22 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
         var manifest = await Manifest(sessionId, ct);
         if (!manifest.AllowedTransitions.TryGetValue(session.Phase, out var allowed) || !allowed.Contains(target)) throw Error("round.invalid_transition", "Phase transition is not allowed.");
         if (target == SessionPhases.Simulation) throw Error("round.execution_required", "Enter Simulation through the execute command.");
-        var previous = session.Phase; session.Phase = target; session.Version++;
+        if ((manifest.ReadinessRequiredPhases ?? []).Contains(session.Phase))
+        {
+            var participantCount = await db.Participants.CountAsync(x => x.SessionId == sessionId, ct);
+            var readyCount = await db.RoundReadiness.CountAsync(x => x.SessionId == sessionId && x.RoundNumber == session.RoundNumber &&
+                x.Phase == session.Phase && x.IsReady, ct);
+            if (participantCount == 0 || readyCount != participantCount)
+                throw Error("round.not_ready", "Every participant must be ready before advancing this phase.");
+        }
+        var previous = session.Phase;
+        if (target == manifest.Phases[0] && previous != target)
+        {
+            if (manifest.MaximumRounds is int maximum && session.RoundNumber >= maximum)
+                throw Error("round.maximum_reached", "The configured maximum number of rounds has been reached.");
+            session.RoundNumber++;
+        }
+        session.Phase = target; session.Version++;
         if (target == SessionPhases.Completed) { session.Status = "Completed"; session.CompletedAt = clock.UtcNow; }
         Event(sessionId, session.RoundNumber, actor, "RoundPhaseChanged", new { previous, current = target });
         Message("RoundPhaseChanged", sessionId, new { sessionId, previous, current = target, session.Version });
@@ -226,6 +296,29 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
             x.Type, x.OccurredAt, JsonDocument.Parse(x.DataJson).RootElement.Clone())).ToArray();
     }
 
+    public async ValueTask<SessionInspection> InspectAsync(Guid instructorId, Guid sessionId, CancellationToken ct)
+    {
+        var session = await OwnedSession(instructorId, sessionId, ct);
+        var manifestJson = (await db.SessionManifests.AsNoTracking().SingleAsync(x => x.SessionId == sessionId, ct)).ManifestJson;
+        var assignments = await db.RoleAssignments.AsNoTracking().Where(x => x.SessionId == sessionId && x.RevokedAt == null).ToListAsync(ct);
+        var people = await db.Participants.AsNoTracking().Where(x => x.SessionId == sessionId).ToListAsync(ct);
+        var readiness = await db.RoundReadiness.AsNoTracking().Where(x => x.SessionId == sessionId).OrderBy(x => x.RoundNumber).ThenBy(x => x.Phase).ToListAsync(ct);
+        var submissions = await db.ActionSubmissions.AsNoTracking().Where(x => x.SessionId == sessionId).OrderBy(x => x.RoundNumber).ThenBy(x => x.SubmittedAt).ToListAsync(ct);
+        var snapshots = await db.Snapshots.AsNoTracking().Where(x => x.SessionId == sessionId).OrderBy(x => x.TeamId).ThenBy(x => x.RoundNumber).ToListAsync(ct);
+        var events = await db.Events.AsNoTracking().Where(x => x.SessionId == sessionId).OrderBy(x => x.Sequence).ToListAsync(ct);
+        return new(session.Id, session.Status, session.Phase, session.RoundNumber, session.Version,
+            JsonDocument.Parse(manifestJson).RootElement.Clone(),
+            people.Select(x => new ParticipantView(x.UserId, x.TeamId, x.IsReady,
+                assignments.Where(a => a.UserId == x.UserId).Select(a => a.RoleCode).ToArray())).ToArray(),
+            readiness.Select(x => new RoundReadinessView(x.UserId, x.RoundNumber, x.Phase, x.IsReady, x.ChangedAt)).ToArray(),
+            submissions.Select(x => new SubmissionInspection(x.Id, x.RoundNumber, x.TeamId, x.UserId, x.RoleAssignmentId,
+                x.ActionCode, JsonDocument.Parse(x.PayloadJson).RootElement.Clone(), x.SubmittedAt, x.SubmittedPhase)).ToArray(),
+            snapshots.Select(x => new SnapshotInspection(x.TeamId, x.RoundNumber,
+                JsonDocument.Parse(x.StateJson).RootElement.Clone(), x.CreatedAt)).ToArray(),
+            events.Select(x => new HistoryItem(x.Sequence, x.RoundNumber, x.Type, x.OccurredAt,
+                JsonDocument.Parse(x.DataJson).RootElement.Clone())).ToArray());
+    }
+
     private ValueTask ChangeStatus(Guid actor, Guid sessionId, string expected, string target, string eventType, CancellationToken ct) => Tx(async () =>
     {
         var session = await OwnedSession(actor, sessionId, ct); if (session.Status != expected) throw Error("session.status_conflict", $"Session must be {expected}.");
@@ -250,6 +343,8 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
         if (manifest.Roles.Any(x => x.MinimumParticipants < 0 || x.MaximumParticipants < Math.Max(1, x.MinimumParticipants))) throw Error("manifest.role_capacity", "Role capacity is invalid.");
         if (manifest.Actions.Any(x => !capabilities.Contains(x.RequiredCapability) || x.AvailablePhases.Any(p => !manifest.Phases.Contains(p)))) throw Error("manifest.action_invalid", "Action capability or phase is invalid.");
         if (manifest.AllowedTransitions.Any(x => !manifest.Phases.Contains(x.Key) || x.Value.Any(p => !manifest.Phases.Contains(p)))) throw Error("manifest.transition_invalid", "Transition references an unknown phase.");
+        if ((manifest.ReadinessRequiredPhases ?? []).Any(x => !manifest.Phases.Contains(x)) || manifest.MaximumRounds is <= 0)
+            throw Error("manifest.lifecycle_invalid", "Readiness phases and maximum rounds must be valid.");
         if (manifest.Rules.Any(x => x.Effect is not ("Allow" or "Deny"))) throw Error("manifest.rule_effect", "Rule effect must be Allow or Deny.");
     }
 

@@ -31,7 +31,7 @@ public sealed class SubmitActionHandler(
 
         var session = await store.FindSessionAsync(command.SessionId, cancellationToken)
             ?? throw new DomainException("session.not_found", "Session was not found.");
-        var scenario = await scenarios.FindAsync(session.ScenarioVersionId, cancellationToken)
+        var scenario = await scenarios.FindForSessionAsync(session.Id, cancellationToken)
             ?? throw new DomainException("scenario.not_found", "The frozen scenario version was not found.");
         var assignment = await store.FindAssignmentAsync(command.SessionId, command.UserId, command.RoleAssignmentId, cancellationToken)
             ?? throw new DomainException("assignment.not_found", "No active role assignment was found.");
@@ -40,8 +40,10 @@ public sealed class SubmitActionHandler(
         if (!scenario.Actions.TryGetValue(command.ActionCode, out var action)) throw new DomainException("action.unknown", "Unknown action.");
         if (!assignment.CapabilityCodes.Contains(action.RequiredCapability)) throw new DomainException("capability.denied", "The role lacks the required capability.");
         if (!action.AvailablePhases.Contains(session.Phase)) throw new DomainException("action.phase_denied", "The action is unavailable in the current phase.");
+        var submissionCount = await store.CountSubmissionsAsync(session.Id, session.RoundNumber,
+            assignment.Id, command.ActionCode, cancellationToken);
         if (!await rules.IsAllowedAsync(new(session.Id, session.Phase, command.TeamId,
-            command.ActionCode, assignment.CapabilityCodes), cancellationToken))
+            command.ActionCode, assignment.CapabilityCodes, submissionCount), cancellationToken))
             throw new DomainException("rule.denied", "The configured rules deny this action.");
 
         var snapshot = await store.FindLatestSnapshotAsync(command.SessionId, command.TeamId, cancellationToken)
@@ -51,7 +53,7 @@ public sealed class SubmitActionHandler(
         if (!validation.IsValid) throw new DomainException(validation.ErrorCode ?? "action.invalid", validation.Message ?? "The model rejected the action.");
 
         var submission = new ActionSubmission(Guid.NewGuid(), command.SessionId, session.RoundNumber, command.TeamId,
-            command.UserId, command.RoleAssignmentId, command.ActionCode, command.Payload.Clone(), command.IdempotencyKey, clock.UtcNow);
+            command.UserId, command.RoleAssignmentId, command.ActionCode, command.Payload.Clone(), command.IdempotencyKey, clock.UtcNow, session.Phase);
         await store.AddSubmissionAsync(submission, cancellationToken);
         session.Append("ActionSubmitted", command.UserId, clock.UtcNow, new { submission.Id, command.TeamId, command.ActionCode });
         await store.SaveSessionAsync(session, cancellationToken);

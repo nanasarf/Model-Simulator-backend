@@ -24,7 +24,8 @@ public sealed class EfActionRuleEvaluator(PlatformDbContext db, RuleEngine engin
                 : throw new DomainException("rule.effect_unknown", "Unknown rule effect."), RuleAstParser.Parse(x.Condition.GetRawText())));
         var facts = new DictionaryRuleFacts(new Dictionary<string, object?> {
             ["runtime.phase"] = context.Phase, ["actor.capabilities"] = context.Capabilities,
-            ["team.id"] = context.TeamId.ToString(), ["action.code"] = context.ActionCode });
+            ["team.id"] = context.TeamId.ToString(), ["action.code"] = context.ActionCode,
+            ["submission.count"] = context.SubmissionCount });
         return engine.Evaluate(definitions, facts).Allowed;
     }
 }
@@ -64,7 +65,7 @@ internal static class RuleAstParser
     private static string Fact(JsonElement element)
     {
         var fact = element.GetProperty("fact").GetString() ?? "";
-        var allowed = fact is "runtime.phase" or "actor.capabilities" or "team.id" or "action.code";
+        var allowed = fact is "runtime.phase" or "actor.capabilities" or "team.id" or "action.code" or "submission.count";
         if (!allowed || fact.Length > 100) throw new DomainException("rule.fact_unknown", "Rule fact is not registered.");
         return fact;
     }

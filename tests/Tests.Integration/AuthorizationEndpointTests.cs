@@ -39,6 +39,31 @@ public sealed class AuthorizationEndpointTests : IClassFixture<SecureApiFactory>
         { teamId = Guid.NewGuid(), roleAssignmentId = Guid.NewGuid(), actionCode = "ANY", payload = new { } });
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Student_with_any_simulation_title_cannot_use_instructor_macro_console()
+    {
+        _client.DefaultRequestHeaders.Add("X-Test-Role", "Student");
+        var response = await _client.GetAsync($"/api/v1/economics/macro/sessions/{Guid.NewGuid()}/console");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Student_cannot_access_macro_scenario_authoring()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/economics/macro/scenario-authoring/templates");
+        request.Headers.Add("X-Test-Role", "Student");
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Anonymous_user_cannot_access_macro_scenario_templates()
+    {
+        using var client = new SecureApiFactory().CreateClient();
+        var response = await client.GetAsync("/api/v1/economics/macro/scenario-authoring/templates");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 }
 
 public sealed class SecureApiFactory : WebApplicationFactory<Program>

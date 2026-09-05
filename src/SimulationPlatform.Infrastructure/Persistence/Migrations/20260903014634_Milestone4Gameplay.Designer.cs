@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SimulationPlatform.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using SimulationPlatform.Infrastructure.Persistence;
 namespace SimulationPlatform.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PlatformDbContext))]
-    partial class PlatformDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903014634_Milestone4Gameplay")]
+    partial class Milestone4Gameplay
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -496,50 +499,6 @@ namespace SimulationPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("rules", "definitions");
                 });
 
-            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.ScenarioDraftRow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ContentJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("OwnerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("PublishedScenarioVersionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SimulationDefinitionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SimulationDefinitionId", "Name");
-
-                    b.ToTable("scenario_drafts", "definitions");
-                });
-
             modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.ScenarioVersionRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -816,15 +775,6 @@ namespace SimulationPlatform.Infrastructure.Persistence.Migrations
                     b.HasOne("SimulationPlatform.Infrastructure.Persistence.ScenarioVersionRow", null)
                         .WithMany()
                         .HasForeignKey("ScenarioVersionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.ScenarioDraftRow", b =>
-                {
-                    b.HasOne("SimulationPlatform.Infrastructure.Persistence.SimulationDefinitionRow", null)
-                        .WithMany()
-                        .HasForeignKey("SimulationDefinitionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

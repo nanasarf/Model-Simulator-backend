@@ -120,6 +120,9 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<SubmitActionHandler>();
 builder.Services.AddScoped<ExecuteRoundHandler>();
 builder.Services.AddScoped<IClassroomWorkflow, EfClassroomWorkflow>();
+builder.Services.AddScoped<IScenarioDraftStore, EfScenarioDraftStore>();
+builder.Services.AddScoped<IMacroClassroomGameplay, MacroClassroomGameplay>();
+builder.Services.AddScoped<IMacroScenarioAuthoring, MacroScenarioAuthoring>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())
@@ -218,6 +221,7 @@ app.MapPost("/api/v1/sessions/{sessionId:guid}/rounds/current/execute", async (G
 }).RequireAuthorization(PlatformPolicies.Instructor);
 app.MapHub<SessionHub>("/hubs/sessions");
 app.MapClassroomWorkflow();
+app.MapMacroGameplay();
 app.Run();
 
 public sealed record SubmitActionRequest(Guid TeamId, Guid RoleAssignmentId, string ActionCode, JsonElement Payload);

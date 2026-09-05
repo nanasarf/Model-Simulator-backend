@@ -12,7 +12,7 @@ public sealed record RoleAssignment(
 public sealed record ActionSubmission(
     Guid Id, Guid SessionId, int RoundNumber, Guid TeamId, Guid UserId,
     Guid RoleAssignmentId, string ActionCode, JsonElement Payload, string IdempotencyKey,
-    DateTimeOffset SubmittedAt);
+    DateTimeOffset SubmittedAt, string? SubmittedPhase = null);
 
 public sealed record SimulationEvent(
     Guid Id, Guid SessionId, int RoundNumber, Guid? ActorId, string Type,

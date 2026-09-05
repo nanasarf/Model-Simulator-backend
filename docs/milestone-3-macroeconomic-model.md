@@ -2,7 +2,7 @@
 
 ## Boundary
 
-`Economics.ShortRunMacro:1.0.0` is an economics-module implementation of the existing `ISimulationModel` contract. The generic platform knows only its identifier, version, action payloads, state JSON, capabilities and metrics. Registration occurs at the API composition root. No economics dependency is introduced into Domain, Application, Identity, Infrastructure or Simulations.Core.
+`Economics.ShortRunMacro:1.0.0` is an economics-module implementation of the existing `ISimulationModel` contract. The generic platform knows only its identifier, version, action payloads, state JSON, capabilities and metrics. Registration occurs at the API composition root. No economics dependency is introduced into Domain, Application, Identity, Infrastructure or Simulations.Core. The later classroom adapter consumes generic Application contracts in the dependency-safe direction; Application does not reference Economics.
 
 ## Educational purpose
 
@@ -73,4 +73,3 @@ Every role sees headline output, inflation and unemployment. Fiscal, monetary, b
 ## Deliberate limitations
 
 Excluded from this milestone: international trade, exchange rates, detailed banking/financial markets, asset prices, sovereign default, heterogeneous agents, sectoral production, long-run Solow growth, endogenous innovation, detailed tax instruments and empirical country calibration. Outcomes illustrate model logic and should be debriefed alongside these limitations.
-

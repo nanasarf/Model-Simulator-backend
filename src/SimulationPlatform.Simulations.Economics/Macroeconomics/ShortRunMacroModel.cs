@@ -36,8 +36,20 @@ public sealed class ShortRunMacroModel : ISimulationModel
     public ValueTask<ActionValidationResult> ValidateActionAsync(ActionValidationContext context, CancellationToken ct)
     {
         if (!MacroActions.All.Contains(context.ActionCode)) return Invalid("action.unsupported", "Unsupported macroeconomic action.");
+        var state = context.State.Deserialize<MacroState>(JsonOptions);
+        if (state?.Configuration.EnabledActions is { Count: > 0 } enabled && !enabled.Contains(context.ActionCode))
+            return Invalid("action.disabled", "This action is disabled by the published scenario.");
         if (context.Payload.ValueKind != JsonValueKind.Object) return Invalid("action.payload_invalid", "Action payload must be an object.");
-        if (!TryIntensity(context.Payload, out _)) return Invalid("action.intensity_invalid", "Intensity must be Mild, Moderate, or Strong.");
+        if (context.ActionCode == MacroActions.DirectionalPrediction)
+        {
+            var target = context.Payload.TryGetProperty("targetActionCode", out var value) ? value.GetString() : null;
+            return target is not null && MacroActions.All.Contains(target) &&
+                target is not (MacroActions.TriggerShock or MacroActions.DirectionalPrediction) && ValidPrediction(context.Payload)
+                ? Valid() : Invalid("prediction.invalid", "Prediction target, directions, or explanation are invalid.");
+        }
+        if (!TryIntensity(context.Payload, out var intensity)) return Invalid("action.intensity_invalid", "Intensity must be Mild, Moderate, or Strong.");
+        if (state?.Configuration.AllowedIntensities is { Count: > 0 } intensities && !intensities.Contains(intensity))
+            return Invalid("action.intensity_disabled", "This intensity is disabled by the published scenario.");
         if (context.ActionCode == MacroActions.TriggerShock)
         {
             var type = Text(context.Payload, "type");
@@ -61,7 +73,11 @@ public sealed class ShortRunMacroModel : ISimulationModel
     public ValueTask<RoundExecutionResult> ExecuteRoundAsync(RoundExecutionContext context, CancellationToken ct)
     {
         var prior = context.State.Deserialize<MacroState>(JsonOptions) ?? throw new JsonException("Invalid macro state.");
-        var decisions = context.Actions.Where(x => x.Code != MacroActions.TriggerShock).Select(ParseDecision).ToArray();
+        var predictions = context.Actions.Where(x => x.Code == MacroActions.DirectionalPrediction)
+            .Select(ParseStandalonePrediction).GroupBy(x => x.Target).ToDictionary(x => x.Key, x => x.Last().Prediction);
+        var decisions = context.Actions.Where(x => x.Code is not (MacroActions.TriggerShock or MacroActions.DirectionalPrediction))
+            .Select(ParseDecision).Select(x => x.Prediction is null && predictions.TryGetValue(x.Code, out var prediction)
+                ? x with { Prediction = prediction } : x).ToArray();
         var shocks = (prior.Configuration.ScheduledShocks ?? []).Where(x => x.Round == context.RoundNumber)
             .Concat(context.Actions.Where(x => x.Code == MacroActions.TriggerShock).Select(ParseShock)).ToArray();
         var mechanismContext = new MacroMechanismContext(prior, decisions, shocks, context.RoundNumber);
@@ -91,7 +107,9 @@ public sealed class ShortRunMacroModel : ISimulationModel
             BusinessConfidence = business, ConsumerConfidence = consumer, WagePressure = wagePressure,
             Productivity = MacroMath.Clamp(prior.Productivity + contributions.Sum(x => x.PotentialOutputChange) * 0.4m, 70, 160),
             LaggedMonetaryDemand = nextLaggedMonetaryDemand };
-        var conflicts = DetectConflicts(decisions, shocks);
+        var conflicts = DetectConflicts(decisions, shocks).ToList();
+        if (inflation > prior.Inflation && output < prior.OutputIndex)
+            conflicts.Add(new("STAGFLATION_CONDITIONS", "Inflation rose while output fell, creating a short-run stabilization trade-off."));
         var assessments = decisions.Where(x => x.Prediction is not null).Select(x => Assess(x, prior, provisional)).ToArray();
         var objectives = EvaluateObjectives(provisional);
         var causal = contributions.Where(x => x.DemandPressure != 0 || x.SupplyPressure != 0 || x.PotentialOutputChange != 0 || x.PolicyRateChange != 0)
@@ -135,6 +153,17 @@ public sealed class ShortRunMacroModel : ISimulationModel
             if (context.Capabilities.Contains(MacroCapabilities.SetHouseholdLaborStance)) actionCodes.Add(MacroActions.HouseholdLaborStance);
             view["assessments"] = state.LastReport.Assessments.Where(x => actionCodes.Contains(x.ActionCode)).ToArray();
             view["policyConflicts"] = state.LastReport.Conflicts;
+            var mechanisms = new List<string>();
+            if (context.Capabilities.Contains(MacroCapabilities.ViewFiscal)) mechanisms.Add("Fiscal transmission");
+            if (context.Capabilities.Contains(MacroCapabilities.ViewMonetary)) mechanisms.Add("Monetary transmission");
+            if (context.Capabilities.Contains(MacroCapabilities.ViewBusiness)) mechanisms.Add("Business investment and production");
+            if (context.Capabilities.Contains(MacroCapabilities.ViewHousehold)) mechanisms.Add("Household demand and wage bargaining");
+            view["causalExplanations"] = state.LastReport.Contributions.Where(x => mechanisms.Contains(x.Mechanism))
+                .Select(x => x.Explanation).ToArray();
+            if (context.Capabilities.Contains(MacroCapabilities.ViewMonetary))
+                view["laggedEffect"] = state.LaggedMonetaryDemand == 0 ? "No inherited monetary-demand effect." :
+                    state.LaggedMonetaryDemand < 0 ? "Earlier monetary tightening continues to restrain demand." :
+                    "Earlier monetary easing continues to support demand.";
         }
         return ValueTask.FromResult(JsonSerializer.SerializeToElement(view, JsonOptions));
     }
@@ -159,6 +188,8 @@ public sealed class ShortRunMacroModel : ISimulationModel
 
     private static MacroDecision ParseDecision(RoundAction action) => new(action.Code, Text(action.Payload, "direction"),
         ParseIntensity(action.Payload), action.Payload.TryGetProperty("prediction", out var p) ? p.Deserialize<DirectionPrediction>(JsonOptions) : null);
+    private static (string Target, DirectionPrediction Prediction) ParseStandalonePrediction(RoundAction action) =>
+        (action.Payload.GetProperty("targetActionCode").GetString()!, action.Payload.Deserialize<DirectionPrediction>(JsonOptions)!);
     private static ScheduledMacroShock ParseShock(RoundAction action) => new(0, Text(action.Payload, "type"), ParseIntensity(action.Payload));
     private static PolicyIntensity ParseIntensity(JsonElement payload) => Enum.Parse<PolicyIntensity>(Text(payload, "intensity"), true);
     private static bool TryIntensity(JsonElement payload, out PolicyIntensity intensity) =>

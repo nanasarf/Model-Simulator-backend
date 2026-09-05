@@ -9,12 +9,14 @@ public interface IRuntimeStore
     ValueTask<ActionSubmission?> FindSubmissionByIdempotencyKeyAsync(Guid userId, string key, CancellationToken cancellationToken);
     ValueTask<SimulationSnapshot?> FindLatestSnapshotAsync(Guid sessionId, Guid teamId, CancellationToken cancellationToken);
     ValueTask AddSubmissionAsync(ActionSubmission submission, CancellationToken cancellationToken);
+    ValueTask<int> CountSubmissionsAsync(Guid sessionId, int roundNumber, Guid roleAssignmentId, string actionCode, CancellationToken cancellationToken);
     ValueTask SaveSessionAsync(SimulationSession session, CancellationToken cancellationToken);
 }
 
 public interface IScenarioCatalog
 {
     ValueTask<Domain.Definitions.ScenarioVersion?> FindAsync(Guid versionId, CancellationToken cancellationToken);
+    ValueTask<Domain.Definitions.ScenarioVersion?> FindForSessionAsync(Guid sessionId, CancellationToken cancellationToken);
 }
 
 public interface ITransactionRunner
@@ -28,10 +30,11 @@ public interface IRoundExecutionStore
     ValueTask<IReadOnlyList<ActionSubmission>> GetRoundActionsAsync(Guid sessionId, Guid teamId, int roundNumber, CancellationToken cancellationToken);
     ValueTask AddSnapshotAsync(SimulationSnapshot snapshot, CancellationToken cancellationToken);
     ValueTask CompleteExecutionAsync(Guid executionId, DateTimeOffset at, CancellationToken cancellationToken);
+    ValueTask<bool> AreAllTeamsCompleteAsync(Guid sessionId, int roundNumber, CancellationToken cancellationToken);
 }
 
 public sealed record ActionRuleContext(Guid SessionId, string Phase, Guid TeamId,
-    string ActionCode, IReadOnlySet<string> Capabilities);
+    string ActionCode, IReadOnlySet<string> Capabilities, int SubmissionCount = 0);
 
 public interface IActionRuleEvaluator
 {

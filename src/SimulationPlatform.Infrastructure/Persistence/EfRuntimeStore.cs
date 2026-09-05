@@ -30,6 +30,21 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
             manifest.Phases, transitions, actions);
     }
 
+    public async ValueTask<ScenarioVersion?> FindForSessionAsync(Guid sessionId, CancellationToken ct)
+    {
+        var frozen = await db.SessionManifests.AsNoTracking().Where(x => x.SessionId == sessionId)
+            .Select(x => new { x.ManifestJson }).SingleOrDefaultAsync(ct);
+        var session = await db.Sessions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == sessionId, ct);
+        if (frozen is null || session is null) return null;
+        var manifest = JsonSerializer.Deserialize<ScenarioManifest>(frozen.ManifestJson, JsonOptions)
+            ?? throw new JsonException("Frozen session manifest is invalid.");
+        var transitions = manifest.AllowedTransitions.ToDictionary(x => x.Key, x => (IReadOnlySet<string>)x.Value);
+        var actions = manifest.Actions.ToDictionary(x => x.Code,
+            x => new ActionDefinition(Guid.Empty, x.Code, x.RequiredCapability, x.AvailablePhases));
+        return new ScenarioVersion(session.ScenarioVersionId, "Frozen session scenario", 0, session.ModelIdentifier,
+            session.ModelVersion, manifest.Phases, transitions, actions);
+    }
+
     public async ValueTask<RoleAssignment?> FindAssignmentAsync(Guid sessionId, Guid userId, Guid assignmentId, CancellationToken ct)
     {
         var row = await db.RoleAssignments.AsNoTracking().SingleOrDefaultAsync(x => x.SessionId == sessionId && x.UserId == userId && x.Id == assignmentId && x.RevokedAt == null, ct);
@@ -41,7 +56,7 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
     {
         var row = await db.ActionSubmissions.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId && x.IdempotencyKey == key, ct);
         return row is null ? null : new(row.Id, row.SessionId, row.RoundNumber, row.TeamId, row.UserId,
-            row.RoleAssignmentId, row.ActionCode, JsonDocument.Parse(row.PayloadJson).RootElement.Clone(), row.IdempotencyKey, row.SubmittedAt);
+            row.RoleAssignmentId, row.ActionCode, JsonDocument.Parse(row.PayloadJson).RootElement.Clone(), row.IdempotencyKey, row.SubmittedAt, row.SubmittedPhase);
     }
 
     public async ValueTask<SimulationSnapshot?> FindLatestSnapshotAsync(Guid sessionId, Guid teamId, CancellationToken ct)
@@ -56,11 +71,16 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
     {
         db.ActionSubmissions.Add(new ActionSubmissionRow { Id = x.Id, SessionId = x.SessionId, RoundNumber = x.RoundNumber,
             TeamId = x.TeamId, UserId = x.UserId, RoleAssignmentId = x.RoleAssignmentId, ActionCode = x.ActionCode,
-            PayloadJson = x.Payload.GetRawText(), IdempotencyKey = x.IdempotencyKey, SubmittedAt = x.SubmittedAt });
+            PayloadJson = x.Payload.GetRawText(), IdempotencyKey = x.IdempotencyKey, SubmittedAt = x.SubmittedAt,
+            SubmittedPhase = x.SubmittedPhase ?? "Unknown" });
         db.Outbox.Add(new OutboxMessage { Id = Guid.NewGuid(), Type = "ActionSubmissionStatusChanged", AggregateId = x.SessionId,
             PayloadJson = JsonSerializer.Serialize(new { x.Id, x.SessionId, x.TeamId, x.RoundNumber }), OccurredAt = x.SubmittedAt, NextAttemptAt = x.SubmittedAt });
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask<int> CountSubmissionsAsync(Guid sessionId, int round, Guid assignmentId, string actionCode, CancellationToken ct) =>
+        new(db.ActionSubmissions.CountAsync(x => x.SessionId == sessionId && x.RoundNumber == round &&
+            x.RoleAssignmentId == assignmentId && x.ActionCode == actionCode, ct));
 
     public async ValueTask SaveSessionAsync(SimulationSession session, CancellationToken ct)
     {
@@ -83,7 +103,7 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
     {
         var rows = await db.ActionSubmissions.AsNoTracking().Where(x => x.SessionId == sessionId && x.TeamId == teamId && x.RoundNumber == round).ToListAsync(ct);
         return rows.Select(x => new ActionSubmission(x.Id, x.SessionId, x.RoundNumber, x.TeamId, x.UserId, x.RoleAssignmentId,
-            x.ActionCode, JsonDocument.Parse(x.PayloadJson).RootElement.Clone(), x.IdempotencyKey, x.SubmittedAt)).ToArray();
+            x.ActionCode, JsonDocument.Parse(x.PayloadJson).RootElement.Clone(), x.IdempotencyKey, x.SubmittedAt, x.SubmittedPhase)).ToArray();
     }
 
     public ValueTask AddSnapshotAsync(SimulationSnapshot x, CancellationToken ct)
@@ -101,5 +121,14 @@ public sealed class EfRuntimeStore(PlatformDbContext db) : IRuntimeStore, IScena
         var row = db.Executions.Local.SingleOrDefault(x => x.Id == executionId && x.Status == "Running")
             ?? await db.Executions.SingleAsync(x => x.Id == executionId && x.Status == "Running", ct);
         row.Status = "Completed"; row.CompletedAt = at;
+    }
+
+    public async ValueTask<bool> AreAllTeamsCompleteAsync(Guid sessionId, int round, CancellationToken ct)
+    {
+        var teams = await db.Teams.CountAsync(x => x.SessionId == sessionId, ct);
+        var persisted = await db.Executions.CountAsync(x => x.SessionId == sessionId && x.RoundNumber == round && x.Status == "Completed", ct);
+        var pending = db.Executions.Local.Count(x => x.SessionId == sessionId && x.RoundNumber == round &&
+            x.Status == "Completed" && db.Entry(x).State == EntityState.Added);
+        return teams > 0 && persisted + pending == teams;
     }
 }

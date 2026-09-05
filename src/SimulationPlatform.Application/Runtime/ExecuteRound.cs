@@ -21,13 +21,15 @@ public sealed class ExecuteRoundHandler(IRuntimeStore runtime, IRoundExecutionSt
     {
         var session = await runtime.FindSessionAsync(command.SessionId, ct)
             ?? throw new DomainException("session.not_found", "Session was not found.");
-        if (session.Phase != SessionPhases.Locked) throw new DomainException("round.not_locked", "Only a locked round can execute.");
-        var scenario = await scenarios.FindAsync(session.ScenarioVersionId, ct)
+        if (session.Phase is not (SessionPhases.Locked or SessionPhases.Simulation))
+            throw new DomainException("round.not_locked", "Only a locked or currently executing round can execute.");
+        var scenario = await scenarios.FindForSessionAsync(session.Id, ct)
             ?? throw new DomainException("scenario.not_found", "Frozen scenario was not found.");
         if (!await executions.TryClaimAsync(command.ExecutionId, session.Id, command.TeamId, session.RoundNumber, clock.UtcNow, ct))
             throw new DomainException("round.already_executed", "This round already has an execution.");
 
-        session.TransitionTo(SessionPhases.Simulation, scenario, command.ActorUserId, clock.UtcNow);
+        if (session.Phase == SessionPhases.Locked)
+            session.TransitionTo(SessionPhases.Simulation, scenario, command.ActorUserId, clock.UtcNow);
         var prior = await runtime.FindLatestSnapshotAsync(session.Id, command.TeamId, ct)
             ?? throw new DomainException("state.not_initialized", "Team state is not initialized.");
         var actions = await executions.GetRoundActionsAsync(session.Id, command.TeamId, session.RoundNumber, ct);
@@ -39,8 +41,9 @@ public sealed class ExecuteRoundHandler(IRuntimeStore runtime, IRoundExecutionSt
         await executions.AddSnapshotAsync(new(session.Id, command.TeamId, session.RoundNumber, session.ModelIdentifier,
             session.ModelVersion, result.State.Clone(), clock.UtcNow), ct);
         session.Append("SimulationExecuted", command.ActorUserId, clock.UtcNow, new { command.ExecutionId, command.TeamId, result.Metrics });
-        session.TransitionTo(SessionPhases.Results, scenario, command.ActorUserId, clock.UtcNow);
         await executions.CompleteExecutionAsync(command.ExecutionId, clock.UtcNow, ct);
+        if (await executions.AreAllTeamsCompleteAsync(session.Id, session.RoundNumber, ct))
+            session.TransitionTo(SessionPhases.Results, scenario, command.ActorUserId, clock.UtcNow);
         await audit.WriteAsync(command.ActorUserId, "Runtime.RoundExecuted", "Session", session.Id.ToString(),
             command.TraceId, clock.UtcNow, ct);
         await runtime.SaveSessionAsync(session, ct);

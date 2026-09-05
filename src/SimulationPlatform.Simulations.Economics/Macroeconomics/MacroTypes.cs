@@ -9,8 +9,9 @@ public static class MacroActions
     public const string BusinessStrategy = "SET_BUSINESS_STRATEGY";
     public const string HouseholdLaborStance = "SET_HOUSEHOLD_LABOR_STANCE";
     public const string TriggerShock = "TRIGGER_EXTERNAL_SHOCK";
+    public const string DirectionalPrediction = "SUBMIT_DIRECTIONAL_PREDICTION";
     public static readonly IReadOnlySet<string> All = new HashSet<string>
-        { FiscalPolicy, MonetaryPolicy, BusinessStrategy, HouseholdLaborStance, TriggerShock };
+        { FiscalPolicy, MonetaryPolicy, BusinessStrategy, HouseholdLaborStance, TriggerShock, DirectionalPrediction };
 }
 
 public static class MacroCapabilities
@@ -20,6 +21,7 @@ public static class MacroCapabilities
     public const string SetBusinessStrategy = "MACRO_SET_BUSINESS_STRATEGY";
     public const string SetHouseholdLaborStance = "MACRO_SET_HOUSEHOLD_LABOR_STANCE";
     public const string TriggerShock = "MACRO_TRIGGER_SHOCK";
+    public const string SubmitPrediction = "MACRO_SUBMIT_PREDICTION";
     public const string ViewFiscal = "MACRO_VIEW_FISCAL";
     public const string ViewMonetary = "MACRO_VIEW_MONETARY";
     public const string ViewBusiness = "MACRO_VIEW_BUSINESS";
@@ -51,7 +53,9 @@ public sealed record MacroConfiguration(
     decimal InflationPersistence = 0.65m,
     decimal OkunCoefficient = 0.4m,
     MacroObjectiveConfiguration? Objectives = null,
-    List<ScheduledMacroShock>? ScheduledShocks = null);
+    List<ScheduledMacroShock>? ScheduledShocks = null,
+    HashSet<string>? EnabledActions = null,
+    HashSet<PolicyIntensity>? AllowedIntensities = null);
 
 public sealed record CausalContribution(string Mechanism, decimal DemandPressure, decimal SupplyPressure,
     decimal PotentialOutputChange, decimal PolicyRateChange, decimal FiscalBalanceChange, string Explanation);

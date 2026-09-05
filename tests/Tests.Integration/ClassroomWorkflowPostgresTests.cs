@@ -13,6 +13,7 @@ using SimulationPlatform.Infrastructure;
 using SimulationPlatform.Infrastructure.Persistence;
 using SimulationPlatform.Simulations.Core.Contracts;
 using SimulationPlatform.Simulations.Economics.SupplyDemand;
+using SimulationPlatform.Simulations.Economics.Macroeconomics;
 
 namespace Tests.Integration;
 
@@ -140,7 +141,7 @@ public sealed class ClassroomScope : IAsyncDisposable
     public ClassroomScope(PlatformDbContext platform, IdentityDataContext identity)
     {
         Platform = platform; Identity = identity;
-        var registry = new SimulationModelRegistry(new ISimulationModel[] { new SupplyDemandModel() });
+        var registry = new SimulationModelRegistry(new ISimulationModel[] { new SupplyDemandModel(), new ShortRunMacroModel() });
         Workflow = new(platform, identity, registry, Clock);
         var store = new EfRuntimeStore(platform); var transactions = new EfTransactionRunner(platform);
         Submit = new(store, store, registry, Clock, transactions, new EfActionRuleEvaluator(platform, new RuleEngine()));
@@ -164,6 +165,54 @@ public sealed class ClassroomScope : IAsyncDisposable
         await Workflow.SetReadyAsync(student, session, true, default);
         await Workflow.StartSessionAsync(instructor, session, default);
         return new(instructor, other, student, scenario, session, team, assignment);
+    }
+
+    public async Task<MacroWorkflowIds> BuildStartedMacroSession()
+    {
+        var instructor = await AddUser(PlatformRoles.Instructor);
+        var other = await AddUser(PlatformRoles.Instructor);
+        var students = new[] { await AddUser(PlatformRoles.Student), await AddUser(PlatformRoles.Student),
+            await AddUser(PlatformRoles.Student), await AddUser(PlatformRoles.Student) };
+        var course = await Workflow.CreateCourseAsync(instructor, "MACRO-" + Guid.NewGuid().ToString("N")[..6], "Macro Lab", default);
+        var classroom = await Workflow.CreateClassroomAsync(instructor, course, "Country Cabinet", default);
+        foreach (var student in students) await Workflow.EnrollAsync(instructor, classroom, student, default);
+        var definition = await Workflow.CreateDefinitionAsync(instructor, "Short-run country", default);
+        var scenario = await Workflow.PublishScenarioAsync(instructor, definition, "Two-quarter stabilization", MacroManifest(), default);
+        var session = await Workflow.CreateSessionAsync(instructor, classroom, scenario, 4242, default);
+        var team = await Workflow.CreateTeamAsync(instructor, session, "Novara", default);
+        var roles = new[] { "GOVERNMENT", "CENTRAL_BANK", "BUSINESS", "HOUSEHOLD_LABOR" };
+        var assignments = new List<Guid>();
+        for (var i = 0; i < students.Length; i++)
+        {
+            await Workflow.AddTeamMemberAsync(instructor, session, team, students[i], default);
+            assignments.Add(await Workflow.AssignRoleAsync(instructor, session, team, students[i], roles[i], default));
+            await Workflow.SetReadyAsync(students[i], session, true, default);
+        }
+        await Workflow.StartSessionAsync(instructor, session, default);
+        return new(instructor, other, students, scenario, session, team, assignments.ToArray());
+    }
+
+    public async Task<(Guid Instructor, Guid Session, Guid[] Teams, Guid[] Students, Guid[] Assignments)> BuildTwoTeamSession()
+    {
+        var instructor = await AddUser(PlatformRoles.Instructor);
+        var students = new[] { await AddUser(PlatformRoles.Student), await AddUser(PlatformRoles.Student) };
+        var course = await Workflow.CreateCourseAsync(instructor, "TWO-" + Guid.NewGuid().ToString("N")[..6], "Two Teams", default);
+        var classroom = await Workflow.CreateClassroomAsync(instructor, course, "Section", default);
+        foreach (var student in students) await Workflow.EnrollAsync(instructor, classroom, student, default);
+        var definition = await Workflow.CreateDefinitionAsync(instructor, "Market", default);
+        var scenario = await Workflow.PublishScenarioAsync(instructor, definition, "Market", Manifest(), default);
+        var session = await Workflow.CreateSessionAsync(instructor, classroom, scenario, 7, default);
+        var teams = new[] { await Workflow.CreateTeamAsync(instructor, session, "A", default),
+            await Workflow.CreateTeamAsync(instructor, session, "B", default) };
+        var assignments = new Guid[2];
+        for (var i = 0; i < 2; i++)
+        {
+            await Workflow.AddTeamMemberAsync(instructor, session, teams[i], students[i], default);
+            assignments[i] = await Workflow.AssignRoleAsync(instructor, session, teams[i], students[i], "PRODUCER", default);
+            await Workflow.SetReadyAsync(students[i], session, true, default);
+        }
+        await Workflow.StartSessionAsync(instructor, session, default);
+        return (instructor, session, teams, students, assignments);
     }
 
     private async Task<Guid> AddUser(string roleName)
@@ -199,8 +248,48 @@ public sealed class ClassroomScope : IAsyncDisposable
             new List<RuleManifest> { new(Guid.NewGuid(), 1, "Allow", condition) });
     }
 
+    private static ScenarioManifest MacroManifest()
+    {
+        var phases = new List<string> { SessionPhases.Briefing, "Prediction", SessionPhases.Decision,
+            SessionPhases.Locked, SessionPhases.Simulation, SessionPhases.Results, "Discussion", SessionPhases.Completed };
+        var transitions = new Dictionary<string, HashSet<string>>
+        {
+            [SessionPhases.Briefing] = ["Prediction"], ["Prediction"] = [SessionPhases.Decision],
+            [SessionPhases.Decision] = [SessionPhases.Locked], [SessionPhases.Locked] = [SessionPhases.Simulation],
+            [SessionPhases.Simulation] = [SessionPhases.Results], [SessionPhases.Results] = ["Discussion"],
+            ["Discussion"] = [SessionPhases.Briefing, SessionPhases.Completed]
+        };
+        var roles = new List<RoleManifest>
+        {
+            new("GOVERNMENT", "Government", 1, 1, [MacroCapabilities.SubmitPrediction, MacroCapabilities.SetFiscalPolicy, MacroCapabilities.ViewFiscal]),
+            new("CENTRAL_BANK", "Central Bank", 1, 1, [MacroCapabilities.SubmitPrediction, MacroCapabilities.SetMonetaryPolicy, MacroCapabilities.ViewMonetary]),
+            new("BUSINESS", "Business", 1, 1, [MacroCapabilities.SubmitPrediction, MacroCapabilities.SetBusinessStrategy, MacroCapabilities.ViewBusiness]),
+            new("HOUSEHOLD_LABOR", "Household/Labor", 1, 1, [MacroCapabilities.SubmitPrediction, MacroCapabilities.SetHouseholdLaborStance, MacroCapabilities.ViewHousehold])
+        };
+        var actions = new List<ActionManifest>
+        {
+            new(MacroActions.DirectionalPrediction, MacroCapabilities.SubmitPrediction, ["Prediction"]),
+            new(MacroActions.FiscalPolicy, MacroCapabilities.SetFiscalPolicy, [SessionPhases.Decision]),
+            new(MacroActions.MonetaryPolicy, MacroCapabilities.SetMonetaryPolicy, [SessionPhases.Decision]),
+            new(MacroActions.BusinessStrategy, MacroCapabilities.SetBusinessStrategy, [SessionPhases.Decision]),
+            new(MacroActions.HouseholdLaborStance, MacroCapabilities.SetHouseholdLaborStance, [SessionPhases.Decision])
+        };
+        var config = new MacroConfiguration(ScheduledShocks:
+            [new ScheduledMacroShock(1, "supply_disruption", PolicyIntensity.Moderate)]);
+        var rules = new List<RuleManifest>
+        {
+            new(Guid.NewGuid(), 100, "Deny", JsonSerializer.SerializeToElement(new
+                { kind = "comparison", fact = "submission.count", @operator = "gte", value = 1 })),
+            new(Guid.NewGuid(), 0, "Allow", JsonSerializer.SerializeToElement(new
+                { kind = "exists", fact = "action.code" }))
+        };
+        return new("Economics.ShortRunMacro", "1.0.0", 1, JsonSerializer.SerializeToElement(config), phases,
+            transitions, roles, actions, rules, ["Prediction", SessionPhases.Decision], 2);
+    }
+
     public async ValueTask DisposeAsync() { await Platform.DisposeAsync(); await Identity.DisposeAsync(); }
 }
 
 public sealed record WorkflowIds(Guid Instructor, Guid OtherInstructor, Guid Student, Guid Scenario, Guid Session, Guid Team, Guid Assignment);
+public sealed record MacroWorkflowIds(Guid Instructor, Guid OtherInstructor, Guid[] Students, Guid Scenario, Guid Session, Guid Team, Guid[] Assignments);
 public sealed class FixedClock : IClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }

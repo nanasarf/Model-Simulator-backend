@@ -39,6 +39,9 @@ public static class ClassroomEndpoints
         api.MapPut("/sessions/{sessionId:guid}/participants/me/readiness", async (Guid sessionId, ReadinessRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
         { await workflow.SetReadyAsync(UserId(user), sessionId, request.Ready, ct); return Results.NoContent(); })
             .RequireAuthorization(PlatformPolicies.Student);
+        api.MapPut("/sessions/{sessionId:guid}/rounds/current/readiness", async (Guid sessionId, ReadinessRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
+        { await workflow.SetRoundReadyAsync(UserId(user), sessionId, request.Ready, ct); return Results.NoContent(); })
+            .RequireAuthorization(PlatformPolicies.Student);
         api.MapPost("/sessions/{sessionId:guid}/commands/start", async (Guid sessionId, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
         { await workflow.StartSessionAsync(UserId(user), sessionId, ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
         api.MapPost("/sessions/{sessionId:guid}/commands/pause", async (Guid sessionId, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>

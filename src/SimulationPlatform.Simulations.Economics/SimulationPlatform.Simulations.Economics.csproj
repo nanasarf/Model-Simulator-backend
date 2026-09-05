@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SimulationPlatform.Simulations.Core\SimulationPlatform.Simulations.Core.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Application\SimulationPlatform.Application.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
