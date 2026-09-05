@@ -14,7 +14,7 @@ public sealed record MacroScenarioContent(string Briefing, List<string> Learning
     List<string> DiscussionPrompts, List<string> DebriefPrompts, MacroStartingConditions StartingConditions,
     int MaximumQuarters, List<MacroRoleAuthoring> Roles, HashSet<string> EnabledActions,
     HashSet<PolicyIntensity> AllowedIntensities, List<ScheduledMacroShock> ScheduledShocks,
-    MacroObjectiveConfiguration TeamObjectives);
+    MacroObjectiveConfiguration TeamObjectives, HashSet<MacroAssessmentDimension>? AssessmentDimensions = null);
 public sealed record AuthoringIssue(string Code, string Message);
 public sealed record MacroValidationReport(bool CanPublish, IReadOnlyList<AuthoringIssue> Blockers, IReadOnlyList<AuthoringIssue> Warnings);
 public sealed record MacroPreviewQuarter(int Quarter, MacroState State);
@@ -157,7 +157,8 @@ public sealed class MacroScenarioAuthoring(IScenarioDraftStore drafts, IClassroo
         actions.AddRange(roles.Select(x => RoleMap[x.Code]).Where(x => c.EnabledActions.Contains(x.Action)).Select(x => new ActionManifest(x.Action, x.Set, [SessionPhases.Decision])));
         var rules = new List<RuleManifest> { new(Guid.NewGuid(), 100, "Deny", JsonSerializer.SerializeToElement(new { kind = "comparison", fact = "submission.count", @operator = "gte", value = 1 })), new(Guid.NewGuid(), 0, "Allow", JsonSerializer.SerializeToElement(new { kind = "exists", fact = "action.code" })) };
         var presentation = JsonSerializer.SerializeToElement(new { c.Briefing, c.LearningObjectives, c.DiscussionPrompts, c.DebriefPrompts,
-            roleObjectives = c.Roles.ToDictionary(x => x.Code, x => x.Objectives), c.TeamObjectives }, JsonOptions);
+            roleObjectives = c.Roles.ToDictionary(x => x.Code, x => x.Objectives), c.TeamObjectives,
+            assessmentDimensions = c.AssessmentDimensions?.AsEnumerable() ?? Enum.GetValues<MacroAssessmentDimension>().AsEnumerable() }, JsonOptions);
         return new("Economics.ShortRunMacro", "1.0.0", 1, JsonSerializer.SerializeToElement(Configuration(c), JsonOptions), phases,
             transitions, roles, actions, rules, ["Prediction", SessionPhases.Decision], c.MaximumQuarters, presentation);
     }

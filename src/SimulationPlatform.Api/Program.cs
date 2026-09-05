@@ -123,6 +123,8 @@ builder.Services.AddScoped<IClassroomWorkflow, EfClassroomWorkflow>();
 builder.Services.AddScoped<IScenarioDraftStore, EfScenarioDraftStore>();
 builder.Services.AddScoped<IMacroClassroomGameplay, MacroClassroomGameplay>();
 builder.Services.AddScoped<IMacroScenarioAuthoring, MacroScenarioAuthoring>();
+builder.Services.AddScoped<SimulationPlatform.Application.Assessment.IAssessmentCommentStore, EfAssessmentCommentStore>();
+builder.Services.AddScoped<IMacroLearningAnalytics, MacroLearningAnalytics>();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())

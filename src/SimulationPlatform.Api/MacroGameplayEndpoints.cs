@@ -14,6 +14,23 @@ public static class MacroGameplayEndpoints
             Results.Ok(await gameplay.GetInstructorConsoleAsync(UserId(user), sessionId, ct)));
         group.MapGet("/debrief", async (Guid sessionId, ClaimsPrincipal user, IMacroClassroomGameplay gameplay, CancellationToken ct) =>
             Results.Ok(await gameplay.GetDebriefAsync(UserId(user), sessionId, ct)));
+        group.MapGet("/analytics", async (Guid sessionId, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok(await analytics.AnalyzeAsync(UserId(user), sessionId, ct)));
+        group.MapGet("/comparison", async (Guid sessionId, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok(await analytics.AnalyzeAsync(UserId(user), sessionId, ct)));
+        group.MapGet("/cohort-summary", async (Guid sessionId, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok(await analytics.AnalyzeAsync(UserId(user), sessionId, ct)));
+        group.MapGet("/report", async (Guid sessionId, string format, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+        { var report = await analytics.ReportAsync(UserId(user), sessionId, ct); return format.Equals("csv", StringComparison.OrdinalIgnoreCase)
+                ? Results.Text(analytics.ExportCsv(report), "text/csv") : Results.Json(report); });
+        group.MapGet("/replay", async (Guid sessionId, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok((await analytics.ReportAsync(UserId(user), sessionId, ct)).Replay));
+        group.MapGet("/assessment-comments", async (Guid sessionId, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok(await analytics.CommentsAsync(UserId(user), sessionId, ct)));
+        group.MapPost("/assessment-comments", async (Guid sessionId, AssessmentCommentRequest request, ClaimsPrincipal user, HttpRequest http, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Created($"/api/v1/economics/macro/sessions/{sessionId}/assessment-comments", await analytics.AddCommentAsync(UserId(user), sessionId, request.TargetType, request.TargetId, request.Text, http.Headers["Idempotency-Key"].ToString(), ct)));
+        group.MapPut("/assessment-comments/{commentId:guid}", async (Guid commentId, AssessmentCommentUpdateRequest request, ClaimsPrincipal user, IMacroLearningAnalytics analytics, CancellationToken ct) =>
+            Results.Ok(await analytics.UpdateCommentAsync(UserId(user), commentId, request.Text, request.ExpectedVersion, ct)));
 
         var authoring = endpoints.MapGroup("/api/v1/economics/macro/scenario-authoring")
             .RequireAuthorization(PlatformPolicies.Instructor);
@@ -51,3 +68,5 @@ public sealed record UpdateMacroDraftRequest(string Name, MacroScenarioContent C
 public sealed record CloneMacroDraftRequest(string Name);
 public sealed record VersionRequest(long ExpectedVersion);
 public sealed record PreviewRequest(int Seed);
+public sealed record AssessmentCommentRequest(string TargetType, Guid TargetId, string Text);
+public sealed record AssessmentCommentUpdateRequest(string Text, long ExpectedVersion);
