@@ -66,7 +66,7 @@ public sealed class AuthorizationEndpointTests : IClassFixture<SecureApiFactory>
     }
 }
 
-public sealed class SecureApiFactory : WebApplicationFactory<Program>
+public class SecureApiFactory : WebApplicationFactory<Program>
 {
     internal const string Key = "integration-test-key-that-is-at-least-32-bytes-long";
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -100,7 +100,8 @@ public sealed class TestAuthenticationHandler(IOptionsMonitor<AuthenticationSche
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.TryGetValue("X-Test-Role", out var role)) return Task.FromResult(AuthenticateResult.NoResult());
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+        var userId = Request.Headers.TryGetValue("X-Test-User", out var requested) && Guid.TryParse(requested, out var parsed) ? parsed : Guid.NewGuid();
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Role, role.ToString())], Scheme.Name);
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name)));
     }

@@ -229,6 +229,7 @@ app.MapHub<SessionHub>("/hubs/sessions");
 app.MapClassroomWorkflow();
 app.MapMacroGameplay();
 app.MapCompetitiveMarket();
+app.MapScenarioDiscovery();
 app.Run();
 
 public sealed record SubmitActionRequest(Guid TeamId, Guid RoleAssignmentId, string ActionCode, JsonElement Payload);

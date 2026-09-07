@@ -4,7 +4,7 @@ namespace SimulationPlatform.Application.Classrooms;
 
 public sealed record RoleManifest(string Code, string Name, int MinimumParticipants, int MaximumParticipants,
     HashSet<string> Capabilities);
-public sealed record ActionManifest(string Code, string RequiredCapability, HashSet<string> AvailablePhases);
+public sealed record ActionManifest(string Code, string RequiredCapability, HashSet<string> AvailablePhases, JsonElement? Constraints = null);
 public sealed record RuleManifest(Guid Id, int Priority, string Effect, JsonElement Condition);
 public sealed record ScenarioManifest(string ModelIdentifier, string ModelVersion, int ConfigurationVersion,
     JsonElement ModelConfiguration, List<string> Phases,
@@ -12,9 +12,14 @@ public sealed record ScenarioManifest(string ModelIdentifier, string ModelVersio
     List<RoleManifest> Roles, List<ActionManifest> Actions, List<RuleManifest> Rules,
     HashSet<string>? ReadinessRequiredPhases = null, int? MaximumRounds = null, JsonElement? Presentation = null);
 
+public sealed record RecoveryRoleAssignment(Guid AssignmentId, Guid TeamId, string RoleCode, IReadOnlySet<string> Capabilities);
+public sealed record RecoveryActionDefinition(string Code, string RequiredCapability, IReadOnlySet<string> AvailablePhases, JsonElement? Constraints);
+public sealed record RecoverySubmission(Guid SubmissionId, Guid RoleAssignmentId, string ActionCode, string Status,
+    DateTimeOffset? SubmittedAt, JsonElement? Payload);
 public sealed record SessionRecoveryView(Guid SessionId, string Status, string Phase, int RoundNumber,
-    Guid? TeamId, IReadOnlyList<string> RoleCodes, JsonElement? VisibleState, long Version,
-    IReadOnlyList<ParticipantView> Participants);
+    string ModelIdentifier, string ModelVersion, Guid? TeamId, IReadOnlyList<RecoveryRoleAssignment> RoleAssignments,
+    IReadOnlyList<RecoveryActionDefinition> AvailableActions, IReadOnlyList<RecoverySubmission> CurrentRoundSubmissions,
+    JsonElement? VisibleState, long Version, IReadOnlyList<ParticipantView> Participants);
 public sealed record ParticipantView(Guid UserId, Guid? TeamId, bool IsReady, IReadOnlyList<string> Roles);
 public sealed record HistoryItem(long Sequence, int RoundNumber, string Type, DateTimeOffset OccurredAt, JsonElement Data);
 public sealed record RoundReadinessView(Guid UserId, int RoundNumber, string Phase, bool IsReady, DateTimeOffset ChangedAt);

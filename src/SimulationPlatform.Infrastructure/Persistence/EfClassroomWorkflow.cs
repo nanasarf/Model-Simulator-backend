@@ -267,21 +267,35 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
         if (instructor) await OwnedSession(userId, sessionId, ct);
         var participant = await db.Participants.AsNoTracking().SingleOrDefaultAsync(x => x.SessionId == sessionId && x.UserId == userId, ct);
         if (!instructor && participant is null) throw Error("session.not_found", "Session was not found.");
+        var manifest = await Manifest(sessionId, ct);
         var assignments = await db.RoleAssignments.AsNoTracking().Where(x => x.SessionId == sessionId && x.RevokedAt == null).ToListAsync(ct);
+        var visibleAssignments = instructor ? assignments : assignments.Where(x => x.UserId == userId).ToList();
+        var capabilities = visibleAssignments.SelectMany(x => JsonSerializer.Deserialize<HashSet<string>>(x.CapabilitiesJson, JsonOptions) ?? []).ToHashSet();
+        var availableActions = manifest.Actions
+            .Where(x => instructor || capabilities.Contains(x.RequiredCapability))
+            .Select(x => new RecoveryActionDefinition(x.Code, x.RequiredCapability, x.AvailablePhases, x.Constraints)).ToArray();
+        var currentRows = await db.ActionSubmissions.AsNoTracking()
+            .Where(x => x.SessionId == sessionId && x.RoundNumber == session.RoundNumber)
+            .OrderBy(x => x.SubmittedAt).ToListAsync(ct);
+        var visibleSubmissions = instructor ? currentRows : currentRows.Where(x => x.UserId == userId).ToList();
+        var currentSubmissions = visibleSubmissions.Select(x => new RecoverySubmission(x.Id, x.RoleAssignmentId, x.ActionCode,
+            "Submitted", x.SubmittedAt, instructor || x.UserId == userId ? JsonDocument.Parse(x.PayloadJson).RootElement.Clone() : null)).ToArray();
         JsonElement? visible = null;
         if (participant?.TeamId is Guid teamId)
         {
             var snapshot = await db.Snapshots.AsNoTracking().Where(x => x.SessionId == sessionId && x.TeamId == teamId).OrderByDescending(x => x.RoundNumber).FirstOrDefaultAsync(ct);
-            if (snapshot is not null)
-            {
-                var capabilities = assignments.Where(x => x.UserId == userId).SelectMany(x => JsonSerializer.Deserialize<HashSet<string>>(x.CapabilitiesJson, JsonOptions) ?? []).ToHashSet();
-                visible = await models.Resolve(session.ModelIdentifier, session.ModelVersion).GenerateVisibleStateAsync(
-                    new(JsonDocument.Parse(snapshot.StateJson).RootElement.Clone(), capabilities), ct);
-            }
+            var model = models.Resolve(session.ModelIdentifier, session.ModelVersion);
+            var authoritativeState = snapshot is not null
+                ? JsonDocument.Parse(snapshot.StateJson).RootElement.Clone()
+                : await model.InitializeAsync(new(manifest.ModelConfiguration, session.Seed), ct);
+            visible = await model.GenerateVisibleStateAsync(new(authoritativeState, capabilities), ct);
         }
         var people = await db.Participants.AsNoTracking().Where(x => x.SessionId == sessionId).Select(x => new { x.UserId, x.TeamId, x.IsReady }).ToListAsync(ct);
-        return new(session.Id, session.Status, session.Phase, session.RoundNumber, participant?.TeamId,
-            assignments.Where(x => x.UserId == userId).Select(x => x.RoleCode).ToArray(), visible, session.Version,
+        return new(session.Id, session.Status, session.Phase, session.RoundNumber, session.ModelIdentifier, session.ModelVersion,
+            participant?.TeamId,
+            visibleAssignments.Select(x => new RecoveryRoleAssignment(x.Id, x.TeamId, x.RoleCode,
+                JsonSerializer.Deserialize<HashSet<string>>(x.CapabilitiesJson, JsonOptions) ?? [])).ToArray(),
+            availableActions, currentSubmissions, visible, session.Version,
             people.Select(x => new ParticipantView(x.UserId, x.TeamId, x.IsReady, assignments.Where(a => a.UserId == x.UserId).Select(a => a.RoleCode).ToArray())).ToArray());
     }
 

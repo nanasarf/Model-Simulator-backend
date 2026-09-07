@@ -52,6 +52,36 @@ public sealed class ClassroomWorkflowPostgresTests : IClassFixture<ClassroomData
     }
 
     [Fact]
+    public async Task Fresh_student_cold_load_recovers_pinned_model_role_capabilities_actions_and_round_submission_state()
+    {
+        await using var scope = await database.CreateScope();
+        var ids = await scope.BuildStartedMacroSession();
+        await scope.Workflow.AdvancePhaseAsync(ids.Instructor, ids.Session, "Prediction", default);
+        var cold = await scope.Workflow.RecoverAsync(ids.Students[0], false, ids.Session, default);
+
+        Assert.Equal("Economics.ShortRunMacro", cold.ModelIdentifier);
+        Assert.Equal("1.0.0", cold.ModelVersion);
+        Assert.NotNull(cold.VisibleState);
+        var assignment = Assert.Single(cold.RoleAssignments);
+        Assert.Equal(ids.Assignments[0], assignment.AssignmentId);
+        Assert.Contains(MacroCapabilities.SetFiscalPolicy, assignment.Capabilities);
+        Assert.Contains(cold.AvailableActions, x => x.Code == MacroActions.DirectionalPrediction &&
+            x.RequiredCapability == MacroCapabilities.SubmitPrediction && x.AvailablePhases.Contains("Prediction"));
+        Assert.DoesNotContain(cold.AvailableActions, x => x.Code == MacroActions.MonetaryPolicy);
+
+        var prediction = JsonSerializer.SerializeToElement(new { targetActionCode = MacroActions.FiscalPolicy,
+            output = "increase", inflation = "increase", unemployment = "decrease", explanation = "Demand rises." });
+        await scope.Submit.HandleAsync(new(ids.Session, ids.Team, ids.Students[0], ids.Assignments[0],
+            MacroActions.DirectionalPrediction, prediction, "cold-load-prediction"), default);
+        var refreshed = await scope.Workflow.RecoverAsync(ids.Students[0], false, ids.Session, default);
+        var submitted = Assert.Single(refreshed.CurrentRoundSubmissions);
+        Assert.Equal(ids.Assignments[0], submitted.RoleAssignmentId);
+        Assert.Equal(MacroActions.DirectionalPrediction, submitted.ActionCode);
+        Assert.Equal("Submitted", submitted.Status);
+        Assert.NotNull(submitted.Payload);
+    }
+
+    [Fact]
     public async Task Ownership_simulation_authority_manifest_freezing_and_concurrency_are_enforced()
     {
         await using var scope = await database.CreateScope();
