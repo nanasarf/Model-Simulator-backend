@@ -43,6 +43,11 @@ public interface IClassroomWorkflow
     ValueTask<Guid> CreateTeamAsync(Guid instructorId, Guid sessionId, string name, CancellationToken ct);
     ValueTask AddTeamMemberAsync(Guid instructorId, Guid sessionId, Guid teamId, Guid studentId, CancellationToken ct);
     ValueTask<Guid> AssignRoleAsync(Guid instructorId, Guid sessionId, Guid teamId, Guid studentId, string roleCode, CancellationToken ct);
+    ValueTask RenameTeamAsync(Guid instructorId, Guid sessionId, Guid teamId, string name, long expectedVersion, string idempotencyKey, CancellationToken ct);
+    ValueTask DeleteTeamAsync(Guid instructorId, Guid sessionId, Guid teamId, long expectedVersion, string idempotencyKey, CancellationToken ct);
+    ValueTask RemoveTeamMemberAsync(Guid instructorId, Guid sessionId, Guid teamId, Guid studentId, long expectedVersion, string idempotencyKey, CancellationToken ct);
+    ValueTask MoveTeamMemberAsync(Guid instructorId, Guid sessionId, Guid studentId, Guid targetTeamId, long expectedVersion, string idempotencyKey, CancellationToken ct);
+    ValueTask UnassignRoleAsync(Guid instructorId, Guid sessionId, Guid assignmentId, long expectedVersion, string idempotencyKey, CancellationToken ct);
     ValueTask SetReadyAsync(Guid studentId, Guid sessionId, bool ready, CancellationToken ct);
     ValueTask SetRoundReadyAsync(Guid studentId, Guid sessionId, bool ready, CancellationToken ct);
     ValueTask StartSessionAsync(Guid instructorId, Guid sessionId, CancellationToken ct);

@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using SimulationPlatform.Application.Classrooms;
+using SimulationPlatform.Application.Abstractions;
 using SimulationPlatform.Identity.Authorization;
 using SimulationPlatform.Identity;
 using SimulationPlatform.Infrastructure.Persistence;
+using SimulationPlatform.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -29,7 +31,7 @@ public static class ClassroomEndpoints
         api.MapGet("/classrooms/{classroomId:guid}/roster", async (Guid classroomId, ClaimsPrincipal user, PlatformDbContext db, IdentityDataContext identity, CancellationToken ct) =>
         {
             var owner = UserId(user); var allowed = await db.Classrooms.Join(db.Courses,r=>r.CourseId,c=>c.Id,(r,c)=>new {r,c}).AnyAsync(x=>x.r.Id==classroomId && x.c.OwnerUserId==owner,ct); if(!allowed) return Results.NotFound();
-            var rows = await db.Enrollments.Where(x=>x.ClassroomId==classroomId).Join(identity.Users,u=>u.Id,e=>e.UserId,(e,u)=>new { participantUserId=e.UserId, email=u.Email, userName=u.UserName, enrolledAt=e.EnrolledAt }).OrderBy(x=>x.participantUserId).ToListAsync(ct); return Results.Ok(rows);
+            var rows = await db.Enrollments.Where(x=>x.ClassroomId==classroomId).Join(identity.Users,e=>e.UserId,u=>u.Id,(e,u)=>new { participantUserId=e.UserId, email=u.Email, userName=u.UserName, enrolledAt=e.EnrolledAt }).OrderBy(x=>x.participantUserId).ToListAsync(ct); return Results.Ok(rows);
         }).RequireAuthorization(PlatformPolicies.Instructor);
         api.MapGet("/sessions", async (ClaimsPrincipal user, PlatformDbContext db, int? page, int? pageSize, Guid? classroomId, string? status, string? modelIdentifier, CancellationToken ct) =>
         {
@@ -41,7 +43,7 @@ public static class ClassroomEndpoints
         api.MapGet("/me/sessions", async (ClaimsPrincipal user, PlatformDbContext db, CancellationToken ct) =>
         { var id=UserId(user); var rows=await db.Participants.AsNoTracking().Where(p=>p.UserId==id).Join(db.Sessions,p=>p.SessionId,s=>s.Id,(p,s)=>new{p,s}).Join(db.Classrooms,x=>x.s.ClassroomId,r=>r.Id,(x,r)=>new{x.p,x.s,r}).Join(db.ScenarioVersions,x=>x.s.ScenarioVersionId,v=>v.Id,(x,v)=>new{x.p,x.s,x.r,v}).OrderBy(x=>x.s.Id).Select(x=>new{sessionId=x.s.Id,classroomId=x.s.ClassroomId,classroomName=x.r.Name,scenarioTitle=x.v.Name,modelIdentifier=x.s.ModelIdentifier,modelVersion=x.s.ModelVersion,status=x.s.Status,currentRound=x.s.RoundNumber,currentPhase=x.s.Phase,teamId=x.p.TeamId}).ToListAsync(ct); return Results.Ok(rows); }).RequireAuthorization(PlatformPolicies.Student);
         api.MapGet("/sessions/{sessionId:guid}/setup", async (Guid sessionId, ClaimsPrincipal user, PlatformDbContext db, IdentityDataContext identity, CancellationToken ct) =>
-        { var owner=UserId(user); var baseRow=await db.Sessions.AsNoTracking().Join(db.Classrooms,s=>s.ClassroomId,r=>r.Id,(s,r)=>new{s,r}).Join(db.Courses,x=>x.r.CourseId,c=>c.Id,(x,c)=>new{x.s,x.r,c}).Join(db.ScenarioVersions,x=>x.s.ScenarioVersionId,v=>v.Id,(x,v)=>new{x.s,x.r,x.c,v}).Where(x=>x.s.Id==sessionId&&x.c.OwnerUserId==owner).SingleOrDefaultAsync(ct); if(baseRow is null)return Results.NotFound(); var manifest=JsonSerializer.Deserialize<ScenarioManifest>(baseRow.v.ManifestJson)!; var teams=await db.Teams.Where(t=>t.SessionId==sessionId).Select(t=>new{teamId=t.Id,name=t.Name,members=db.Participants.Where(p=>p.TeamId==t.Id).Select(p=>p.UserId).ToList()}).ToListAsync(ct); var participants=await db.Participants.Where(p=>p.SessionId==sessionId).Select(p=>new{participantId=p.Id,userId=p.UserId,teamId=p.TeamId,isReady=p.IsReady}).ToListAsync(ct); var roles=await db.RoleAssignments.Where(r=>r.SessionId==sessionId&&r.RevokedAt==null).Select(r=>new{assignmentId=r.Id,participantId=r.UserId,teamId=r.TeamId,roleCode=r.RoleCode,effectiveCapabilities=JsonSerializer.Deserialize<HashSet<string>>(r.CapabilitiesJson)}).ToListAsync(ct); return Results.Ok(new{session=new{ id=baseRow.s.Id,status=baseRow.s.Status,currentRound=baseRow.s.RoundNumber,currentPhase=baseRow.s.Phase},classroom=new{id=baseRow.r.Id,name=baseRow.r.Name},scenario=new{id=baseRow.v.SimulationDefinitionId,title=baseRow.v.Name,publishedVersion=baseRow.v.Version},model=new{identifier=baseRow.s.ModelIdentifier,version=baseRow.s.ModelVersion},teams,participants,availableRoles=manifest.Roles,roleAssignments=roles,readiness=new{isReady=teams.Count>0&&participants.All(p=>p.teamId!=null),blockers=participants.Where(p=>p.teamId==null).Select(p=>new{code="session.participant.unassigned",participantId=p.participantId}).ToList()}}); }).RequireAuthorization(PlatformPolicies.Instructor);
+        { var owner=UserId(user); var baseRow=await db.Sessions.AsNoTracking().Join(db.Classrooms,s=>s.ClassroomId,r=>r.Id,(s,r)=>new{s,r}).Join(db.Courses,x=>x.r.CourseId,c=>c.Id,(x,c)=>new{x.s,x.r,c}).Join(db.ScenarioVersions,x=>x.s.ScenarioVersionId,v=>v.Id,(x,v)=>new{x.s,x.r,x.c,v}).Where(x=>x.s.Id==sessionId&&x.c.OwnerUserId==owner).SingleOrDefaultAsync(ct); if(baseRow is null)return Results.NotFound(); var manifest=JsonSerializer.Deserialize<ScenarioManifest>(baseRow.v.ManifestJson)!; var teams=await db.Teams.Where(t=>t.SessionId==sessionId).Select(t=>new{teamId=t.Id,name=t.Name,members=db.Participants.Where(p=>p.TeamId==t.Id).Select(p=>p.UserId).ToList()}).ToListAsync(ct); var participants=await db.Participants.Where(p=>p.SessionId==sessionId).Select(p=>new{participantId=p.Id,userId=p.UserId,teamId=p.TeamId,isReady=p.IsReady}).ToListAsync(ct); var roles=await db.RoleAssignments.Where(r=>r.SessionId==sessionId&&r.RevokedAt==null).Select(r=>new{assignmentId=r.Id,participantId=r.UserId,teamId=r.TeamId,roleCode=r.RoleCode,effectiveCapabilities=JsonSerializer.Deserialize<HashSet<string>>(r.CapabilitiesJson)}).ToListAsync(ct); return Results.Ok(new{session=new{ id=baseRow.s.Id,status=baseRow.s.Status,currentRound=baseRow.s.RoundNumber,currentPhase=baseRow.s.Phase,version=baseRow.s.Version},classroom=new{id=baseRow.r.Id,name=baseRow.r.Name},scenario=new{id=baseRow.v.SimulationDefinitionId,title=baseRow.v.Name,publishedVersion=baseRow.v.Version},model=new{identifier=baseRow.s.ModelIdentifier,version=baseRow.s.ModelVersion},teams,participants,availableRoles=manifest.Roles,roleAssignments=roles,readiness=new{isReady=teams.Count>0&&participants.All(p=>p.teamId!=null),blockers=participants.Where(p=>p.teamId==null).Select(p=>new{code="session.participant.unassigned",participantId=p.participantId}).ToList()}}); }).RequireAuthorization(PlatformPolicies.Instructor);
         api.MapPost("/courses", async (NamedCourseRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
             Results.Created("/api/v1/courses", new { id = await workflow.CreateCourseAsync(UserId(user), request.Code, request.Name, ct) }))
             .RequireAuthorization(PlatformPolicies.Instructor);
@@ -69,6 +71,11 @@ public static class ClassroomEndpoints
         api.MapPost("/sessions/{sessionId:guid}/role-assignments", async (Guid sessionId, AssignRoleRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
             Results.Created("/api/v1/role-assignments", new { id = await workflow.AssignRoleAsync(UserId(user), sessionId, request.TeamId, request.UserId, request.RoleCode, ct) }))
             .RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/sessions/{sessionId:guid}/teams/{teamId:guid}/rename", async (Guid sessionId, Guid teamId, CorrectionNameRequest request, ClaimsPrincipal user, HttpRequest http, IClassroomWorkflow workflow, CancellationToken ct) => { await workflow.RenameTeamAsync(UserId(user),sessionId,teamId,request.Name,request.ExpectedVersion,http.Headers["Idempotency-Key"].ToString(),ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/sessions/{sessionId:guid}/teams/{teamId:guid}/delete", async (Guid sessionId, Guid teamId, SessionVersionRequest request, ClaimsPrincipal user, HttpRequest http, IClassroomWorkflow workflow, CancellationToken ct) => { await workflow.DeleteTeamAsync(UserId(user),sessionId,teamId,request.ExpectedVersion,http.Headers["Idempotency-Key"].ToString(),ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/sessions/{sessionId:guid}/teams/{teamId:guid}/members/{studentId:guid}/remove", async (Guid sessionId, Guid teamId, Guid studentId, SessionVersionRequest request, ClaimsPrincipal user, HttpRequest http, IClassroomWorkflow workflow, CancellationToken ct) => { await workflow.RemoveTeamMemberAsync(UserId(user),sessionId,teamId,studentId,request.ExpectedVersion,http.Headers["Idempotency-Key"].ToString(),ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/sessions/{sessionId:guid}/participants/{studentId:guid}/move", async (Guid sessionId, Guid studentId, MoveMemberRequest request, ClaimsPrincipal user, HttpRequest http, IClassroomWorkflow workflow, CancellationToken ct) => { await workflow.MoveTeamMemberAsync(UserId(user),sessionId,studentId,request.TargetTeamId,request.ExpectedVersion,http.Headers["Idempotency-Key"].ToString(),ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/sessions/{sessionId:guid}/role-assignments/{assignmentId:guid}/unassign", async (Guid sessionId, Guid assignmentId, SessionVersionRequest request, ClaimsPrincipal user, HttpRequest http, IClassroomWorkflow workflow, CancellationToken ct) => { await workflow.UnassignRoleAsync(UserId(user),sessionId,assignmentId,request.ExpectedVersion,http.Headers["Idempotency-Key"].ToString(),ct); return Results.NoContent(); }).RequireAuthorization(PlatformPolicies.Instructor);
         api.MapPut("/sessions/{sessionId:guid}/participants/me/readiness", async (Guid sessionId, ReadinessRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
         { await workflow.SetReadyAsync(UserId(user), sessionId, request.Ready, ct); return Results.NoContent(); })
             .RequireAuthorization(PlatformPolicies.Student);
@@ -87,11 +94,30 @@ public static class ClassroomEndpoints
             Results.Ok(await workflow.RecoverAsync(UserId(user), user.IsInRole("Instructor") || user.IsInRole("PlatformAdministrator"), sessionId, ct))).RequireAuthorization();
         api.MapGet("/sessions/{sessionId:guid}/history", async (Guid sessionId, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
             Results.Ok(await workflow.HistoryAsync(UserId(user), user.IsInRole("Instructor") || user.IsInRole("PlatformAdministrator"), sessionId, ct))).RequireAuthorization();
+        api.MapGet("/sessions/{sessionId:guid}/join-code", async (Guid sessionId, ClaimsPrincipal user, PlatformDbContext db, CancellationToken ct) =>
+        { var owner=UserId(user); var session=await db.Sessions.Join(db.Classrooms,s=>s.ClassroomId,r=>r.Id,(s,r)=>new{s,r}).Join(db.Courses,x=>x.r.CourseId,c=>c.Id,(x,c)=>new{x.s,c}).Where(x=>x.s.Id==sessionId&&x.c.OwnerUserId==owner).Select(x=>x.s).SingleOrDefaultAsync(ct); if(session is null)return Results.NotFound(); if(session.Status is not ("Draft" or "Running")) throw new DomainException("session.join_not_allowed", "This session is not accepting participants."); return Results.Ok(new{sessionId,joinCode=JoinCode(sessionId),active=true}); }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapPost("/session-joins", async (JoinSessionRequest request, ClaimsPrincipal user, PlatformDbContext db, IClock clock, HttpContext http, CancellationToken ct) =>
+        {
+            var code=(request.Code??string.Empty).Trim().ToUpperInvariant(); var student=UserId(user);
+            var session=(await db.Sessions.AsNoTracking().ToListAsync(ct)).SingleOrDefault(s=>JoinCode(s.Id)==code);
+            if(session is null) throw new DomainException("session.join_code_invalid", "The join code is invalid or expired.");
+            if(session.Status is not ("Draft" or "Running")) throw new DomainException("session.join_not_allowed", "This session is not accepting participants.");
+            var p=await db.Participants.SingleOrDefaultAsync(x=>x.SessionId==session.Id&&x.UserId==student,ct);
+            if(p is null)
+            {
+                p=new ParticipantRow{Id=Guid.NewGuid(),SessionId=session.Id,UserId=student,JoinedAt=clock.UtcNow}; db.Participants.Add(p);
+                db.AuditRecords.Add(AuditFactory.Create(student,"Session.ParticipantJoined","Session",session.Id.ToString(),http.TraceIdentifier,clock.UtcNow));
+                db.Outbox.Add(new OutboxMessage{Id=Guid.NewGuid(),Type="ParticipantJoined",AggregateId=session.Id,PayloadJson=JsonSerializer.Serialize(new{sessionId=session.Id,userId=student,participantId=p.Id}),OccurredAt=clock.UtcNow,NextAttemptAt=clock.UtcNow});
+                await db.SaveChangesAsync(ct);
+            }
+            return Results.Ok(new{sessionId=session.Id,participantId=p.Id,teamId=p.TeamId,joinCode=code});
+        }).RequireAuthorization(PlatformPolicies.Student);
         return endpoints;
     }
 
     private static Guid UserId(ClaimsPrincipal user) => Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub"), out var id)
         ? id : throw new UnauthorizedAccessException("Authenticated subject is missing.");
+    private static string JoinCode(Guid id) { const string a="ABCDEFGHJKMNPQRSTUVWXYZ23456789"; var v=BitConverter.ToUInt64(id.ToByteArray(),0); var c=new char[6]; for(var i=0;i<6;i++){c[i]=a[(int)(v%(ulong)a.Length)];v/=(ulong)a.Length;} return new(c); }
 }
 
 public sealed record NamedCourseRequest(string Code, string Name);
@@ -102,3 +128,7 @@ public sealed record CreateSessionRequest(Guid ScenarioVersionId, int Seed);
 public sealed record AssignRoleRequest(Guid TeamId, Guid UserId, string RoleCode);
 public sealed record ReadinessRequest(bool Ready);
 public sealed record AdvancePhaseRequest(string TargetPhase);
+public sealed record JoinSessionRequest(string Code);
+public sealed record SessionVersionRequest(long ExpectedVersion);
+public sealed record CorrectionNameRequest(string Name, long ExpectedVersion);
+public sealed record MoveMemberRequest(Guid TargetTeamId, long ExpectedVersion);
