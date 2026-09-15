@@ -81,7 +81,8 @@ builder.Services.AddAuthentication().AddJwtBearer(options =>
         },
         OnTokenValidated = async context =>
         {
-            var subject = context.Principal?.FindFirstValue("sub");
+            var subject = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? context.Principal?.FindFirstValue("sub");
             var stamp = context.Principal?.FindFirstValue("security_stamp");
             var users = context.HttpContext.RequestServices.GetRequiredService<UserManager<ApplicationUser>>();
             if (!Guid.TryParse(subject, out var userId)) { context.Fail("Missing subject."); return; }
@@ -89,6 +90,24 @@ builder.Services.AddAuthentication().AddJwtBearer(options =>
             if (user is null || !user.IsActive || !CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(stamp ?? ""), Encoding.UTF8.GetBytes(user.SecurityStamp ?? "")))
                 context.Fail("Account security state changed.");
+        },
+        OnAuthenticationFailed = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+            logger.LogWarning(context.Exception, "JWT authentication failed for {Path}; trace {TraceId}", context.Request.Path, context.HttpContext.TraceIdentifier);
+            return Task.CompletedTask;
+        },
+        OnChallenge = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+            logger.LogDebug("JWT challenge {Error} for {Path}; trace {TraceId}", context.Error, context.Request.Path, context.HttpContext.TraceIdentifier);
+            return Task.CompletedTask;
+        },
+        OnForbidden = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+            logger.LogInformation("JWT authorization forbidden for {Path}; trace {TraceId}", context.Request.Path, context.HttpContext.TraceIdentifier);
+            return Task.CompletedTask;
         }
     };
 });

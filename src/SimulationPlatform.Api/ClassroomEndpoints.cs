@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using SimulationPlatform.Application.Classrooms;
 using SimulationPlatform.Identity.Authorization;
+using SimulationPlatform.Identity;
+using SimulationPlatform.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace SimulationPlatform.Api;
 
@@ -9,6 +12,24 @@ public static class ClassroomEndpoints
     public static IEndpointRouteBuilder MapClassroomWorkflow(this IEndpointRouteBuilder endpoints)
     {
         var api = endpoints.MapGroup("/api/v1");
+        api.MapGet("/classrooms", async (ClaimsPrincipal user, PlatformDbContext db, int? page, int? pageSize, CancellationToken ct) =>
+        {
+            var owner = UserId(user); var p = Math.Max(1, page ?? 1); var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var query = db.Classrooms.AsNoTracking().Join(db.Courses, r => r.CourseId, c => c.Id, (r,c) => new { r,c }).Where(x => x.c.OwnerUserId == owner).OrderBy(x => x.r.Id);
+            var total = await query.CountAsync(ct);
+            var items = await query.Skip((p-1)*size).Take(size).Select(x => new { classroomId=x.r.Id, name=x.r.Name, courseId=x.c.Id, courseCode=x.c.Code, courseName=x.c.Name }).ToListAsync(ct);
+            return Results.Ok(new { items, page=p, pageSize=size, totalCount=total });
+        }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapGet("/classrooms/{classroomId:guid}", async (Guid classroomId, ClaimsPrincipal user, PlatformDbContext db, CancellationToken ct) =>
+        {
+            var owner = UserId(user); var item = await db.Classrooms.AsNoTracking().Join(db.Courses, r=>r.CourseId,c=>c.Id,(r,c)=>new {r,c}).Where(x=>x.r.Id==classroomId && x.c.OwnerUserId==owner).Select(x=>new { classroomId=x.r.Id, name=x.r.Name, courseId=x.c.Id, courseCode=x.c.Code, courseName=x.c.Name }).SingleOrDefaultAsync(ct);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        }).RequireAuthorization(PlatformPolicies.Instructor);
+        api.MapGet("/classrooms/{classroomId:guid}/roster", async (Guid classroomId, ClaimsPrincipal user, PlatformDbContext db, IdentityDataContext identity, CancellationToken ct) =>
+        {
+            var owner = UserId(user); var allowed = await db.Classrooms.Join(db.Courses,r=>r.CourseId,c=>c.Id,(r,c)=>new {r,c}).AnyAsync(x=>x.r.Id==classroomId && x.c.OwnerUserId==owner,ct); if(!allowed) return Results.NotFound();
+            var rows = await db.Enrollments.Where(x=>x.ClassroomId==classroomId).Join(identity.Users,u=>u.Id,e=>e.UserId,(e,u)=>new { participantUserId=e.UserId, email=u.Email, userName=u.UserName, enrolledAt=e.EnrolledAt }).OrderBy(x=>x.participantUserId).ToListAsync(ct); return Results.Ok(rows);
+        }).RequireAuthorization(PlatformPolicies.Instructor);
         api.MapPost("/courses", async (NamedCourseRequest request, ClaimsPrincipal user, IClassroomWorkflow workflow, CancellationToken ct) =>
             Results.Created("/api/v1/courses", new { id = await workflow.CreateCourseAsync(UserId(user), request.Code, request.Name, ct) }))
             .RequireAuthorization(PlatformPolicies.Instructor);

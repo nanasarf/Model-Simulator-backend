@@ -17,7 +17,19 @@ public sealed class OutboxDispatcher(IDbContextFactory<PlatformDbContext> dbFact
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var processed = await DispatchBatchAsync(stoppingToken);
+            int processed;
+            try
+            {
+                processed = await DispatchBatchAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Database outages must not terminate the host. The dispatcher retries on
+                // the next cycle; production health checks can still report the dependency.
+                logger.LogWarning(ex, "Outbox dispatch skipped because the database is unavailable.");
+                await Task.Delay(TimeSpan.FromSeconds(5), timeProvider, stoppingToken);
+                continue;
+            }
             if (processed == 0) await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, stoppingToken);
         }
     }
