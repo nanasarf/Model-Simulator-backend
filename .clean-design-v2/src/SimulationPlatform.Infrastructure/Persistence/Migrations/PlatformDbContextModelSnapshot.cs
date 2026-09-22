@@ -216,6 +216,10 @@ namespace SimulationPlatform.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ClassroomId", "StudentUserId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
                     b.HasIndex("ClassroomId", "StudentUserId", "Status");
 
                     b.ToTable("classroom_join_requests", "education");
@@ -848,6 +852,81 @@ namespace SimulationPlatform.Infrastructure.Persistence.Migrations
                     b.ToTable("scenario_versions", "definitions");
                 });
 
+            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.SessionJoinCodeRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NormalizedCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("NormalizedCode", "IsActive")
+                        .IsUnique();
+
+                    b.ToTable("session_join_codes", "runtime");
+                });
+
+            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.SessionJoinRequestRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("StudentUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "StudentUserId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.HasIndex("SessionId", "StudentUserId", "Status");
+
+                    b.ToTable("session_join_requests", "runtime");
+                });
+
             modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.SessionManifestRow", b =>
                 {
                     b.Property<Guid>("SessionId")
@@ -1103,6 +1182,24 @@ namespace SimulationPlatform.Infrastructure.Persistence.Migrations
                     b.HasOne("SimulationPlatform.Infrastructure.Persistence.SimulationDefinitionRow", null)
                         .WithMany()
                         .HasForeignKey("SimulationDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.SessionJoinCodeRow", b =>
+                {
+                    b.HasOne("SimulationPlatform.Infrastructure.Persistence.SessionRow", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SimulationPlatform.Infrastructure.Persistence.SessionJoinRequestRow", b =>
+                {
+                    b.HasOne("SimulationPlatform.Infrastructure.Persistence.SessionRow", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
