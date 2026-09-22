@@ -1,0 +1,17 @@
+  SimulationPlatform.Domain -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Domain\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Domain.dll
+  SimulationPlatform.Simulations.Core -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Simulations.Core\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Simulations.Core.dll
+  SimulationPlatform.Application -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Application\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Application.dll
+  SimulationPlatform.Identity -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Identity\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Identity.dll
+  SimulationPlatform.Infrastructure -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Infrastructure\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Infrastructure.dll
+  SimulationPlatform.Simulations.Economics -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Simulations.Economics\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Simulations.Economics.dll
+  SimulationPlatform.Api -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\src\SimulationPlatform.Api\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\SimulationPlatform.Api.dll
+C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\tests\Tests.Integration\AiMvp1PublishAcceptanceTests.cs(39,9): warning xUnit2002: Do not use Assert.NotNull() on value type 'Guid'. Remove this assert. (https://xunit.net/xunit.analyzers/rules/xUnit2002) [C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\tests\Tests.Integration\Tests.Integration.csproj]
+  Tests.Integration -> C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\tests\Tests.Integration\.artifacts\ai-mvp1-verification\bin\Debug\net10.0\Tests.Integration.dll
+
+Build succeeded.
+
+C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\tests\Tests.Integration\AiMvp1PublishAcceptanceTests.cs(39,9): warning xUnit2002: Do not use Assert.NotNull() on value type 'Guid'. Remove this assert. (https://xunit.net/xunit.analyzers/rules/xUnit2002) [C:\Users\ennxk\COMSCI\ModelSimulator\ModelSimulator-backend\tests\Tests.Integration\Tests.Integration.csproj]
+    1 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.88

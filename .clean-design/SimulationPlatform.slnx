@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SimulationPlatform.Api/SimulationPlatform.Api.csproj" />
+    <Project Path="src/SimulationPlatform.Application/SimulationPlatform.Application.csproj" />
+    <Project Path="src/SimulationPlatform.Domain/SimulationPlatform.Domain.csproj" />
+    <Project Path="src/SimulationPlatform.Identity/SimulationPlatform.Identity.csproj" />
+    <Project Path="src/SimulationPlatform.Infrastructure/SimulationPlatform.Infrastructure.csproj" />
+    <Project Path="src/SimulationPlatform.Simulations.Core/SimulationPlatform.Simulations.Core.csproj" />
+    <Project Path="src/SimulationPlatform.Simulations.Economics/SimulationPlatform.Simulations.Economics.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tests.Architecture/Tests.Architecture.csproj" />
+    <Project Path="tests/Tests.Integration/Tests.Integration.csproj" />
+    <Project Path="tests/Tests.Unit/Tests.Unit.csproj" />
+  </Folder>
+</Solution>

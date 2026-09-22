@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SimulationPlatform.Application\SimulationPlatform.Application.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Domain\SimulationPlatform.Domain.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Infrastructure\SimulationPlatform.Infrastructure.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Simulations.Core\SimulationPlatform.Simulations.Core.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Simulations.Economics\SimulationPlatform.Simulations.Economics.csproj" />
+    <ProjectReference Include="..\SimulationPlatform.Identity\SimulationPlatform.Identity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

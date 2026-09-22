@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: simulation_platform
+      POSTGRES_USER: simulation_platform
+      POSTGRES_PASSWORD: local-development-only
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simulation_platform -d simulation_platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - simulation-platform-postgres:/var/lib/postgresql/data
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Platform: Host=postgres;Database=simulation_platform;Username=simulation_platform;Password=local-development-only
+      Authentication__Jwt__Issuer: SimulationPlatform
+      Authentication__Jwt__Audience: SimulationPlatform.Client
+      Authentication__Jwt__SigningKey: local-development-signing-key-change-before-deployment
+    ports:
+      - "8080:8080"
+
+volumes:
+  simulation-platform-postgres:
