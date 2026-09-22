@@ -35,7 +35,11 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
     {
         await OwnedCourse(actor, courseId, ct); Required(name, nameof(name));
         var row = new ClassroomRow { Id = Guid.NewGuid(), CourseId = courseId, Name = name.Trim() };
-        db.Classrooms.Add(row); Audit(actor, "Classroom.Created", "Classroom", row.Id); await db.SaveChangesAsync(ct); return row.Id;
+        db.Classrooms.Add(row);
+        var code = GenerateClassroomCode();
+        while (await db.ClassroomJoinCodes.AnyAsync(x => x.NormalizedCode == code && x.IsActive, ct)) code = GenerateClassroomCode();
+        db.ClassroomJoinCodes.Add(new ClassroomJoinCodeRow { Id = Guid.NewGuid(), ClassroomId = row.Id, NormalizedCode = code, IsActive = true, CreatedAt = clock.UtcNow, CreatedBy = actor });
+        Audit(actor, "Classroom.Created", "Classroom", row.Id); Audit(actor, "ClassroomJoinCode.Generated", "Classroom", row.Id); await db.SaveChangesAsync(ct); return row.Id;
     }, ct);
 
     public ValueTask EnrollAsync(Guid actor, Guid classroomId, Guid studentId, CancellationToken ct) => Tx(async () =>
@@ -391,6 +395,8 @@ public sealed class EfClassroomWorkflow(PlatformDbContext db, IdentityDataContex
     { var hash=SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(payload,JsonOptions)); db.IdempotencyRecords.Add(new IdempotencyRow{Id=Guid.NewGuid(),UserId=actor,Operation=operation,Key=key,RequestHash=hash,ResponseStatus=204,ResultId=result,CreatedAt=clock.UtcNow,ExpiresAt=clock.UtcNow.AddDays(7)}); await Task.CompletedTask; }
     private static void EnsureDraft(SessionRow session) { if (session.Status != "Draft") throw Error("session.frozen", "Running session configuration is immutable."); }
     private static DomainException Error(string code, string message) => new(code, message);
+    private static string GenerateClassroomCode()
+    { const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; Span<byte> bytes = stackalloc byte[6]; RandomNumberGenerator.Fill(bytes); Span<char> chars = stackalloc char[6]; for (var i=0;i<6;i++) chars[i]=alphabet[bytes[i] % alphabet.Length]; return new string(chars); }
     private void Audit(Guid actor, string action, string type, Guid id) => db.AuditRecords.Add(new AuditRow { Id = Guid.NewGuid(), ActorUserId = actor, Action = action, ResourceType = type, ResourceId = id.ToString(), TraceId = "workflow", MetadataJson = "{}", OccurredAt = clock.UtcNow });
     private void Event(Guid sessionId, int round, Guid? actor, string type, object data) => db.Events.Add(new EventRow { Id = Guid.NewGuid(), SessionId = sessionId, RoundNumber = round, ActorId = actor, Type = type, DataJson = JsonSerializer.Serialize(data, JsonOptions), OccurredAt = clock.UtcNow });
     private OutboxMessage Message(string type, Guid aggregate, object payload) { var row = new OutboxMessage { Id = Guid.NewGuid(), Type = type, AggregateId = aggregate, PayloadJson = JsonSerializer.Serialize(payload, JsonOptions), OccurredAt = clock.UtcNow, NextAttemptAt = clock.UtcNow }; db.Outbox.Add(row); return row; }

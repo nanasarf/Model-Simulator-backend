@@ -31,9 +31,16 @@ public static class ScenarioDiscoveryEndpoints
         api.MapGet("/simulation-definitions", async (ClaimsPrincipal principal, PlatformDbContext db, CancellationToken ct) =>
         {
             var owner = UserId(principal);
-            var definitions = await db.SimulationDefinitions.AsNoTracking().Where(x => x.OwnerUserId == owner)
+            var definitions = await db.SimulationDefinitions.Where(x => x.OwnerUserId == owner)
                 .OrderBy(x => x.Name).ThenBy(x => x.Id)
                 .Select(x => new SimulationDefinitionSummary(x.Id, x.Name, new[] { Macro, Market })).ToListAsync(ct);
+            if (definitions.Count == 0)
+            {
+                var row = new SimulationDefinitionRow { Id = Guid.NewGuid(), OwnerUserId = owner, Name = "My simulation scenarios" };
+                db.SimulationDefinitions.Add(row);
+                await db.SaveChangesAsync(ct);
+                definitions = [new SimulationDefinitionSummary(row.Id, row.Name, new[] { Macro, Market })];
+            }
             return Results.Ok(definitions);
         }).Produces<SimulationDefinitionSummary[]>().RequireAuthorization(PlatformPolicies.Instructor);
 
