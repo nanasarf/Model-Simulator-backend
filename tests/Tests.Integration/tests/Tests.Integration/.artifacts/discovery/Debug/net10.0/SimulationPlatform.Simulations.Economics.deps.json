@@ -1,0 +1,70 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "SimulationPlatform.Simulations.Economics/1.0.0": {
+        "dependencies": {
+          "SimulationPlatform.Application": "1.0.0",
+          "SimulationPlatform.Simulations.Core": "1.0.0"
+        },
+        "runtime": {
+          "SimulationPlatform.Simulations.Economics.dll": {}
+        }
+      },
+      "SimulationPlatform.Application/1.0.0": {
+        "dependencies": {
+          "SimulationPlatform.Domain": "1.0.0",
+          "SimulationPlatform.Simulations.Core": "1.0.0"
+        },
+        "runtime": {
+          "SimulationPlatform.Application.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SimulationPlatform.Domain/1.0.0": {
+        "runtime": {
+          "SimulationPlatform.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SimulationPlatform.Simulations.Core/1.0.0": {
+        "runtime": {
+          "SimulationPlatform.Simulations.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SimulationPlatform.Simulations.Economics/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SimulationPlatform.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SimulationPlatform.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "SimulationPlatform.Simulations.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

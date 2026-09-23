@@ -1,0 +1,9 @@
+{
+  "SimulationPlatform.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Api",
+  "SimulationPlatform.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Application",
+  "SimulationPlatform.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Domain",
+  "SimulationPlatform.Identity, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Identity",
+  "SimulationPlatform.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Infrastructure",
+  "SimulationPlatform.Simulations.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Simulations.Core",
+  "SimulationPlatform.Simulations.Economics, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\ennxk\\COMSCI\\ModelSimulator\\ModelSimulator-backend\\src\\SimulationPlatform.Simulations.Economics"
+}
